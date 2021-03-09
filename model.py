@@ -93,7 +93,7 @@ def unet(pretrained_weights = None,input_size = (256,256,1), output_size = 3, lo
 
 
 def get_small_unet(n_filters=16, bn=True, dilation_rate=1, input_size=(256, 256, 1),
-                   output_channels=3, loss_func="categorical_crossentropy"):
+                   output_channels=3, loss_func="categorical_crossentropy", activate_var="leakyrelu"):
     '''Validation Image data generator
         Inputs: 
             n_filters - base convolution filters
@@ -104,54 +104,54 @@ def get_small_unet(n_filters=16, bn=True, dilation_rate=1, input_size=(256, 256,
     # Define input batch shape
     inputs = Input(input_size)
 
-    conv1 = Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(inputs)
+    conv1 = Conv2D(n_filters * 1, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(inputs)
     if bn:
         conv1 = BatchNormalization()(conv1)
         
-    conv1 = Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv1)
+    conv1 = Conv2D(n_filters * 1, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv1)
 
     if bn:
         conv1 = BatchNormalization()(conv1)
 
     pool1 = MaxPooling2D(pool_size=(2, 2), data_format='channels_last')(conv1)
 
-    conv2 = Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool1)
+    conv2 = Conv2D(n_filters * 2, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool1)
     if bn:
         conv2 = BatchNormalization()(conv2)
         
-    conv2 = Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv2)
+    conv2 = Conv2D(n_filters * 2, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv2)
     if bn:
         conv2 = BatchNormalization()(conv2)
 
     pool2 = MaxPooling2D(pool_size=(2, 2), data_format='channels_last')(conv2)
 
-    conv3 = Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool2)
+    conv3 = Conv2D(n_filters * 4, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool2)
     if bn:
         conv3 = BatchNormalization()(conv3)
         
-    conv3 = Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv3)
+    conv3 = Conv2D(n_filters * 4, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv3)
 
     if bn:
         conv3 = BatchNormalization()(conv3)
 
     pool3 = MaxPooling2D(pool_size=(2, 2), data_format='channels_last')(conv3)
 
-    conv4 = Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool3)
+    conv4 = Conv2D(n_filters * 8, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool3)
     if bn:
         conv4 = BatchNormalization()(conv4)
         
-    conv4 = Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv4)
+    conv4 = Conv2D(n_filters * 8, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv4)
 
     if bn:
         conv4 = BatchNormalization()(conv4)
 
     pool4 = MaxPooling2D(pool_size=(2, 2), data_format='channels_last')(conv4)
 
-    conv5 = Conv2D(n_filters * 16, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool4)
+    conv5 = Conv2D(n_filters * 16, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool4)
     if bn:
         conv5 = BatchNormalization()(conv5)
         
-    conv5 = Conv2D(n_filters * 16, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv5)
+    conv5 = Conv2D(n_filters * 16, (3, 3), activation=activate_var, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv5)
     if bn:
         conv5 = BatchNormalization()(conv5)
         
