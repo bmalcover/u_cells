@@ -8,19 +8,115 @@ from keras.layers import *
 from keras.optimizers import *
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 from keras import backend as keras
+from keras import losses
+import tensorflow as tf
+from typing import Callable, Union
 
+def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[[tf.Tensor, tf.Tensor], tf.Tensor]:
+    """
+    Weighted Dice loss.
+    Used as loss function for multi-class image segmentation with one-hot encoded masks.
+    :param class_weights: Class weight coefficients (Union[list, np.ndarray, tf.Tensor], len=<N_CLASSES>)
+    :return: Weighted Dice loss function (Callable[[tf.Tensor, tf.Tensor], tf.Tensor])
+    """
+    if not isinstance(class_weights, tf.Tensor):
+        class_weights = tf.constant(class_weights)
 
-def dice_coef(y_true, y_pred, smooth=1):
+    def loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        """
+        Compute weighted Dice loss.
+        :param y_true: True masks (tf.Tensor, shape=(<BATCH_SIZE>, <IMAGE_HEIGHT>, <IMAGE_WIDTH>, <N_CLASSES>))
+        :param y_pred: Predicted masks (tf.Tensor, shape=(<BATCH_SIZE>, <IMAGE_HEIGHT>, <IMAGE_WIDTH>, <N_CLASSES>))
+        :return: Weighted Dice loss (tf.Tensor, shape=(None,))
+        """
+        axis_to_reduce = range(1, keras.ndim(y_pred))  # Reduce all axis but first (batch)
+        numerator = y_true * y_pred * class_weights  # Broadcasting
+        numerator = 2. * keras.sum(numerator, axis=axis_to_reduce)
+
+        denominator = (y_true + y_pred) * class_weights # Broadcasting
+        denominator = keras.sum(denominator, axis=axis_to_reduce)
+	
+        iou = 1 - numerator / denominator
+	
+        return iou
+
+    return loss
+    
+def dice_coe(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5):
+    """Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
+    of two batch of data, usually be used for binary image segmentation
+    i.e. labels are binary. The coefficient between 0 to 1, 1 means totally match.
+    
+    From: TensorLayer
+
+    Parameters
+    -----------
+    output : Tensor
+        A distribution with shape: [batch_size, ....], (any dimensions).
+    target : Tensor
+        The target distribution, format the same with `output`.
+    loss_type : str
+        ``jaccard`` or ``sorensen``, default is ``jaccard``.
+    axis : tuple of int
+        All dimensions are reduced, default ``[1,2,3]``.
+    smooth : float
+        This small value will be added to the numerator and denominator.
+            - If both output and target are empty, it makes sure dice is 1.
+            - If either output or target are empty (all pixels are background), dice = ```smooth/(small_value + smooth)``, then if smooth is very small, dice close to 0 (even the image values lower than the threshold), so in this case, higher smooth can have a higher dice.
+
+    Examples
+    ---------
+    >>> import tensorlayer as tl
+    >>> outputs = tl.act.pixel_wise_softmax(outputs)
+    >>> dice_loss = 1 - tl.cost.dice_coe(outputs, y_)
+
+    References
+    -----------
+    - `Wiki-Dice <https://en.wikipedia.org/wiki/Sørensen–Dice_coefficient>`__
+
+    """
+    inse = tf.reduce_sum(output * target, axis=axis)
+    if loss_type == 'jaccard':
+        l = tf.reduce_sum(output * output, axis=axis)
+        r = tf.reduce_sum(target * target, axis=axis)
+    elif loss_type == 'sorensen':
+        l = tf.reduce_sum(output, axis=axis)
+        r = tf.reduce_sum(target, axis=axis)
+    else:
+        raise Exception("Unknow loss_type")
+    # old axis=[0,1,2,3]
+    # dice = 2 * (inse) / (l + r)
+    # epsilon = 1e-5
+    # dice = tf.clip_by_value(dice, 0, 1.0-epsilon) # if all empty, dice = 1
+    # new haodong
+    dice = (2. * inse + smooth) / (l + r + smooth)
+    ##
+    dice = tf.reduce_mean(dice, name='dice_coe')
+    return 1 - dice
+    
+def dice_coef_loss_flatt(y_true, y_pred, smooth=1, weights = None):
     """
     Dice = (2*|X & Y|)/ (|X|+ |Y|)
          =  2*sum(|A*B|)/(sum(A^2)+sum(B^2))
     ref: https://arxiv.org/pdf/1606.04797v1.pdf
     """
-    intersection = keras.sum(keras.abs(y_true * y_pred), axis=-1)
-    return (2. * intersection + smooth) / (keras.sum(keras.square(y_true),-1) + keras.sum(keras.square(y_pred),-1) + smooth)
+    y_true = tf.stack([y_true[:, :, :, 0] * weights[0], y_true[:, :, :, 1] * weights[1], y_true[:, :, :, 2] * weights[2]], axis=-1)
 
-def dice_coef_loss(y_true, y_pred):
-    return 1-dice_coef(y_true, y_pred)
+    y_true = keras.flatten(y_true)
+    y_pred = keras.flatten(y_pred)
+    intersection = keras.sum(y_true * y_pred)
+    union = (keras.sum(keras.square(y_true)) + keras.sum(keras.square(y_pred)))
+
+    dice = (2. * intersection) / union
+
+    return 1 - dice
+
+   
+def merge_loss(y_true, y_pred):
+    dcl = dice_coef_loss_flatt(y_true, y_pred)
+    ccel = losses.categorical_crossentropy(y_true, y_pred)
+	
+    return (0.5 * dcl) + (0.5 * ccel)
 
 def jaccard_distance_loss(y_true, y_pred, smooth=100):
     """
@@ -200,6 +296,7 @@ def get_small_unet(n_filters=16, bn=True, dilation_rate=1, input_size=(256, 256,
         conv9 = BatchNormalization()(conv9)
         
     conv10 = Conv2D(output_channels, (1, 1), activation='softmax', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv9)
+#    conv10 = Conv2D(output_channels, (1, 1), padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv9)
 
     model = Model(inputs=inputs, outputs=conv10)
     model.compile(optimizer=Adam(lr=3e-5), loss=loss_func, metrics=['categorical_accuracy'])
