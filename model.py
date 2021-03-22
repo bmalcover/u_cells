@@ -42,7 +42,7 @@ def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tens
 
     return loss
     
-def dice_coe(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5):
+def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5):
     """Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
     of two batch of data, usually be used for binary image segmentation
     i.e. labels are binary. The coefficient between 0 to 1, 1 means totally match.
