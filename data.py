@@ -15,8 +15,7 @@ CODES = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
 
 
 def decode(mask):
-    # back = (mask[:, :, 0] == 255) & (mask[:, :, 1] == 255) & (mask[:, :,
-    # 2] == 255)
+    
     channels = []  # back.astype(np.uint8) * 255]
     for c in CODES:
         channel = np.argmax(c)
@@ -25,6 +24,11 @@ def decode(mask):
 
         channels.append(aux)
 
+    #back = ((mask[:, :, 0] == 255) & (mask[:, :, 1] == 255) & (mask[:, :, 2] == 255))
+    #back = back.astype(np.uint8) * 255
+
+    #channels.append(back)
+    
     return np.dstack(channels)
 
 
@@ -83,8 +87,8 @@ def trainGenerator(batch_size, train_path, image_folder, mask_folder, aug_dict,
         img = img / 255
 
         if decode_flag:
-            new_mask = np.zeros((mask.shape[0],mask.shape[1], mask.shape[2], 3))
-            for m_idx in range(0, mask.shape[0]):
+            new_mask = np.zeros((1,mask.shape[1], mask.shape[2], 3))
+            for m_idx in range(0, 1):
                 m = mask[m_idx, :, :, :]
                 new_mask[m_idx, :, :, :] = decode(m)
             mask = new_mask
