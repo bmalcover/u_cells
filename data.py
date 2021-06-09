@@ -1,33 +1,124 @@
 #from __future__ import print_function
 
-from keras.preprocessing.image import ImageDataGenerator
-import numpy as np 
-import os
+from typing import Tuple, Union
+from enum import Enum
 import glob
+import os
+import re
+
+from matplotlib import pyplot as plt
+import numpy as np 
 import skimage.io as io
 import skimage.transform as trans
 import cv2
-from matplotlib import pyplot as plt
-import re
 
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras import utils as KU
 
 CODES = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
 
+class decode_mode(Enum):
+    CELLS = 1
+    CELLS_BCK = 2
+    MULTICHANEL_N_BCK = 3
+    MULTICHANEL_BCK = 4
+    
 
-def decode(mask):
-    # back = (mask[:, :, 0] == 255) & (mask[:, :, 1] == 255) & (mask[:, :,
-    # 2] == 255)
-    channels = []  # back.astype(np.uint8) * 255]
-    for c in CODES:
-        channel = np.argmax(c)
-        aux = mask[:, :, channel] == c[channel]
-        aux = aux.astype(np.uint8) * 255
+def decode(mask, mode: decode_mode):
+    """ Decodes the input image into a mask for class or a background image.
+    """
+    channels = []  
+    if mode in (decode_mode.MULTICHANEL_N_BCK, decode_mode.MULTICHANEL_BCK):  
+        for c in CODES:
+            channel = np.argmax(c)
+            mask_aux = mask[:, :, channel] == c[channel]
+            mask_aux = mask_aux.astype(np.uint8) * 255
 
-        channels.append(aux)
+            channels.append(mask_aux)
+        
+        out_mask = np.dstack(channels)
+    else:
+        out_mask = (mask[:, :, 0] < 240) & (mask[:, :, 1] < 240) & (mask[:, :, 2] < 240)
+        out_mask = out_mask.astype(np.uint8) * 255
+        
+        channels.append(out_mask)
+        
+    if mode in (decode_mode.MULTICHANEL_BCK, decode_mode.CELLS_BCK):            
+        mask_bck = (mask[:, :, 0] > 240) & (mask[:, :, 1] > 240) & (mask[:, :, 2] > 240)
+        mask_bck = mask_bck.astype(np.uint8) * 255
+            
+        channels.append(mask_bck)
+        out_mask = np.dstack(channels)
+        
+    return out_mask
 
-    return np.dstack(channels)
 
+class DataGenerator(KU.Sequence):
+    
+    def __init__(self, batch_size:int, path:str, image_folder:str, mask_folder:str, aug_dict,
+                 dcd_mode: Union[decode_mode, None], img_color_mode: str, mask_color_mode: str, target_size: Tuple[int, int], 
+                 seed:int = 1):
+        self.__batch_size = batch_size
+        self.__path = path
+        self.__decode_mode = dcd_mode
+        
+        image_datagen = ImageDataGenerator(**aug_dict)
+        mask_datagen = ImageDataGenerator(**aug_dict)
 
+        image_generator = image_datagen.flow_from_directory(
+            path,
+            classes=[image_folder],
+            class_mode=None,
+            color_mode=img_color_mode,
+            target_size=target_size,
+            batch_size=batch_size,
+            seed=seed
+        )
+
+        mask_generator = mask_datagen.flow_from_directory(
+            path,
+            classes=[mask_folder],
+            class_mode=None,
+            color_mode=mask_color_mode,
+            target_size=target_size,
+            batch_size=batch_size,
+            seed=seed
+        )
+    
+        self.__image_generator = image_generator
+        self.__mask_generator = mask_generator
+        self.__generator = self.__get_merged_info()
+        
+    def __get_merged_info(self):
+        for img, mask in zip(self.__image_generator, self.__mask_generator):
+            img = img / 255
+
+            if self.__decode_mode is not None:
+                if self.__decode_mode is decode_mode.CELLS:
+                    new_mask = np.zeros((mask.shape[0],mask.shape[1], mask.shape[2]))
+
+                    for m_idx in range(0, mask.shape[0]):
+                        m = mask[m_idx, :, :]
+                        new_mask[m_idx, :, :] = decode(m, self.__decode_mode)
+                else:
+                    new_mask = np.zeros((mask.shape[0],mask.shape[1], mask.shape[2], dcd_mode.value))
+
+                    for m_idx in range(0, mask.shape[0]):
+                        m = mask[m_idx, :, :, :]
+                        new_mask[m_idx, :, :, :] = decode(m, self.__decode_mode)
+                mask = new_mask
+
+            mask = mask / 255
+            yield img, mask            
+    
+    def __len__(self):
+        return len((self.__image_generator))
+
+    def __getitem__(self, idx):
+        return next(self.__generator)
+
+    
+    
 def encode(channels: np.ndarray):
     img_res = np.zeros((channels.shape[0], channels.shape[1], 3), dtype=np.uint8)
 
@@ -38,76 +129,6 @@ def encode(channels: np.ndarray):
         img_res[channel == 255] = CODES[i]
 
     return img_res
-
-
-def trainGenerator(batch_size, train_path, image_folder, mask_folder, aug_dict,
-                   image_color_mode="grayscale", mask_color_mode="grayscale",
-                   image_save_prefix="image", mask_save_prefix="mask",
-                   flag_multi_class = False, num_class = 2, save_to_dir=None,
-                   target_size=(256, 256), seed=1, decode_flag=False):
-    '''
-    Generation of an image and a mask at the same time
-    Use the same seed for image_datagen and mask_datagen to ensure the
-    transformation for image and mask is the same
-    To visualize the results of generator, set save_to_dir = "your path"
-    '''
-
-    image_datagen = ImageDataGenerator(**aug_dict)
-    mask_datagen = ImageDataGenerator(**aug_dict)
-
-    image_generator = image_datagen.flow_from_directory(
-        train_path,
-        classes=[image_folder],
-        class_mode=None,
-        color_mode=image_color_mode,
-        target_size=target_size,
-        batch_size=batch_size,
-        save_to_dir=save_to_dir,
-        save_prefix=image_save_prefix,
-        seed=seed)
-
-    mask_generator = mask_datagen.flow_from_directory(
-        train_path,
-        classes=[mask_folder],
-        class_mode=None,
-        color_mode=mask_color_mode,
-        target_size=target_size,
-        batch_size=batch_size,
-        save_to_dir=save_to_dir,
-        save_prefix=mask_save_prefix,
-        seed=seed)
-
-    train_generator = zip(image_generator, mask_generator)
-
-    for img, mask in train_generator:
-        img = img / 255
-
-        if decode_flag:
-            new_mask = np.zeros((mask.shape[0],mask.shape[1], mask.shape[2], 3))
-            for m_idx in range(0, mask.shape[0]):
-                m = mask[m_idx, :, :, :]
-                new_mask[m_idx, :, :, :] = decode(m)
-            mask = new_mask
-
-        mask = mask / 255
-        yield img, mask
-
-
-def testGenerator(test_path, target_size=(256, 256), flag_multi_class=False,
-                  as_gray=True, image=True):
-
-    filenames = glob.glob(test_path)
-    filenames.sort(key=lambda f: int(re.sub('\D', '', f)))
-    # filenames = sorted(filenames)
-    for filename in filenames:
-
-        img = io.imread(filename,as_gray = as_gray)
-        img = img / 255
-        img = trans.resize(img, target_size)
-        img = np.reshape(img, img.shape+(1,)) if (not flag_multi_class) else img
-        img = np.reshape(img, (1,)+img.shape)
-
-        yield img
 
 
 def visualize_label(num_class, color_dict, img):

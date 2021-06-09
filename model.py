@@ -1,16 +1,33 @@
+# -*- coding: utf-8 -*-
+""" Module containing all functions to build the U-Net model.
+
+This module contains the set of functions that defines the original U-Net networks.
+This network was proposed by Ronnenberger et al. and is based on a Encoder-Decoder 
+architecture.
+
+Furthermore also contains the loss functions and a set of modification to the original
+work to be able to work with bounding boxes.
+
+Loss functions:
+    Dice coefficient
+    Sorensen coefficient
+    Jaccard coefficient
+"""
+from typing import Callable, Union
+
 import numpy as np 
 import os
-import skimage.io as io
-import skimage.transform as trans
-import numpy as np
-from keras.models import *
-from keras.layers import *
-from keras.optimizers import *
-from keras.callbacks import ModelCheckpoint, LearningRateScheduler
-from keras import backend as keras
-from keras import losses
+import rpn
+
+from tensorflow.keras.optimizers import *
+from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler
+from tensorflow.keras import losses
+import tensorflow.keras.models as KM
+import tensorflow.keras.backend as K
+import tensorflow.keras.layers as KL
+import tensorflow.keras.layers as KE
 import tensorflow as tf
-from typing import Callable, Union
+
 
 def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[[tf.Tensor, tf.Tensor], tf.Tensor]:
     """
@@ -29,12 +46,12 @@ def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tens
         :param y_pred: Predicted masks (tf.Tensor, shape=(<BATCH_SIZE>, <IMAGE_HEIGHT>, <IMAGE_WIDTH>, <N_CLASSES>))
         :return: Weighted Dice loss (tf.Tensor, shape=(None,))
         """
-        axis_to_reduce = range(1, keras.ndim(y_pred))  # Reduce all axis but first (batch)
+        axis_to_reduce = range(1, K.ndim(y_pred))  # Reduce all axis but first (batch)
         numerator = y_true * y_pred * class_weights  # Broadcasting
         numerator = 2. * keras.sum(numerator, axis=axis_to_reduce)
 
         denominator = (y_true + y_pred) * class_weights # Broadcasting
-        denominator = keras.sum(denominator, axis=axis_to_reduce)
+        denominator = K.sum(denominator, axis=axis_to_reduce)
 	
         iou = 1 - numerator / denominator
 	
@@ -84,112 +101,15 @@ def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=
         r = tf.reduce_sum(target, axis=axis)
     else:
         raise Exception("Unknow loss_type")
-    # old axis=[0,1,2,3]
-    # dice = 2 * (inse) / (l + r)
-    # epsilon = 1e-5
-    # dice = tf.clip_by_value(dice, 0, 1.0-epsilon) # if all empty, dice = 1
-    # new haodong
+    
     dice = (2. * inse + smooth) / (l + r + smooth)
-    ##
     dice = tf.reduce_mean(dice, name='dice_coe')
-    return 1 - dice
     
-def dice_coef_loss_flatt(y_true, y_pred, smooth=1, weights = None):
-    """
-    Dice = (2*|X & Y|)/ (|X|+ |Y|)
-         =  2*sum(|A*B|)/(sum(A^2)+sum(B^2))
-    ref: https://arxiv.org/pdf/1606.04797v1.pdf
-    """
-    y_true = tf.stack([y_true[:, :, :, 0] * weights[0], y_true[:, :, :, 1] * weights[1], y_true[:, :, :, 2] * weights[2]], axis=-1)
-
-    y_true = keras.flatten(y_true)
-    y_pred = keras.flatten(y_pred)
-    intersection = keras.sum(y_true * y_pred)
-    union = (keras.sum(keras.square(y_true)) + keras.sum(keras.square(y_pred)))
-
-    dice = (2. * intersection) / union
-
     return 1 - dice
 
-   
-def merge_loss(y_true, y_pred):
-    dcl = dice_coef_loss_flatt(y_true, y_pred)
-    ccel = losses.categorical_crossentropy(y_true, y_pred)
-	
-    return (0.5 * dcl) + (0.5 * ccel)
 
-def jaccard_distance_loss(y_true, y_pred, smooth=100):
-    """
-    Jaccard = (|X & Y|)/ (|X|+ |Y| - |X & Y|)
-            = sum(|A*B|)/(sum(|A|)+sum(|B|)-sum(|A*B|))
-    
-    The jaccard distance loss is usefull for unbalanced datasets. This has been
-    shifted so it converges on 0 and is smoothed to avoid exploding or disapearing
-    gradient.
-    
-    Ref: https://en.wikipedia.org/wiki/Jaccard_index
-    
-    @url: https://gist.github.com/wassname/f1452b748efcbeb4cb9b1d059dce6f96
-    @author: wassname
-    """
-    intersection = keras.sum(keras.abs(y_true * y_pred), axis=-1)
-    sum_ = keras.sum(keras.abs(y_true) + keras.abs(y_pred), axis=-1)
-    jac = (intersection + smooth) / (sum_ - intersection + smooth)
-    return (1 - jac) * smooth
-
-def unet(pretrained_weights = None,input_size = (256,256,1), output_size = 3, loss_func = "categorical_crossentropy"):
-    inputs = Input(input_size)
-    conv1 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(inputs)
-    conv1 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv1)
-    pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
-    conv2 = Conv2D(128, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(pool1)
-    conv2 = Conv2D(128, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv2)
-    pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
-    conv3 = Conv2D(256, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(pool2)
-    conv3 = Conv2D(256, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv3)
-    pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
-    conv4 = Conv2D(512, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(pool3)
-    conv4 = Conv2D(512, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv4)
-    drop4 = Dropout(0.5)(conv4)
-    pool4 = MaxPooling2D(pool_size=(2, 2))(drop4)
-
-    conv5 = Conv2D(1024, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(pool4)
-    conv5 = Conv2D(1024, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv5)
-    drop5 = Dropout(0.5)(conv5)
-
-    up6 = Conv2D(512, 2, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(UpSampling2D(size = (2,2))(drop5))
-    merge6 = concatenate([drop4,up6], axis = 3)
-    conv6 = Conv2D(512, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(merge6)
-    conv6 = Conv2D(512, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv6)
-
-    up7 = Conv2D(256, 2, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(UpSampling2D(size = (2,2))(conv6))
-    merge7 = concatenate([conv3,up7], axis = 3)
-    conv7 = Conv2D(256, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(merge7)
-    conv7 = Conv2D(256, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv7)
-
-    up8 = Conv2D(128, 2, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(UpSampling2D(size = (2,2))(conv7))
-    merge8 = concatenate([conv2,up8], axis = 3)
-    conv8 = Conv2D(128, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(merge8)
-    conv8 = Conv2D(128, 3, padding = 'same', kernel_initializer = 'he_normal')(conv8)
-
-    up9 = Conv2D(64, 2, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(UpSampling2D(size = (2,2))(conv8))
-    merge9 = concatenate([conv1,up9], axis = 3)
-    conv9 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(merge9)
-    conv9 = Conv2D(64, 3, padding = 'same', kernel_initializer = 'he_normal')(conv9)
-    conv9 = Conv2D(2, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv9)
-    conv10 = Conv2D(output_size, (1,1), activation = 'sigmoid')(conv9)
-
-    model = Model(input = inputs, output = conv10)
-
-    model.compile(optimizer = Adam(lr = 3e-5), loss = loss_func, metrics = ['categorical_accuracy'])
-    
-    print(model.summary())
-
-    return model
-
-
-def get_small_unet(n_filters=16, bn=True, dilation_rate=1, input_size=(256, 256, 1),
-                   output_channels=3, loss_func="categorical_crossentropy"):
+def build_unet(n_filters=16, bn=True, dilation_rate=1, input_size=(256, 256, 1),
+               output_channels=3, loss_func="categorical_crossentropy", use_rpn: bool = False):
     '''Validation Image data generator
         Inputs: 
             n_filters - base convolution filters
@@ -198,109 +118,158 @@ def get_small_unet(n_filters=16, bn=True, dilation_rate=1, input_size=(256, 256,
         Output: Unet keras Model
     '''
     # Define input batch shape
-    inputs = Input(input_size)
+    input_image = KL.Input(input_size)
 
-    conv1 = Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(inputs)
+    conv1 = KL.Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_1")(input_image)
     if bn:
-        conv1 = BatchNormalization()(conv1)
+        conv1 = KL.BatchNormalization(name="bn_conv_1")(conv1)
         
-    conv1 = Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv1)
+    conv1 = KL.Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_1_1")(conv1)
 
     if bn:
-        conv1 = BatchNormalization()(conv1)
+        conv1 = KL.BatchNormalization(name="bn_conv_1_1")(conv1)
 
-    pool1 = MaxPooling2D(pool_size=(2, 2), data_format='channels_last')(conv1)
+    pool1 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name='mp_1')(conv1)
 
-    conv2 = Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool1)
+    conv2 = KL.Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_2")(pool1)
     if bn:
-        conv2 = BatchNormalization()(conv2)
+        conv2 = KL.BatchNormalization(name="bn_conv_2")(conv2)
         
-    conv2 = Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv2)
+    conv2 = KL.Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_2_2")(conv2)
     if bn:
-        conv2 = BatchNormalization()(conv2)
+        conv2 = KL.BatchNormalization(name="bn_conv_2_2")(conv2)
 
-    pool2 = MaxPooling2D(pool_size=(2, 2), data_format='channels_last')(conv2)
+    pool2 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name="mp_2")(conv2)
 
-    conv3 = Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool2)
+    conv3 = KL.Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_3")(pool2)
     if bn:
-        conv3 = BatchNormalization()(conv3)
+        conv3 = KL.BatchNormalization(name="bn_conv_3")(conv3)
         
-    conv3 = Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv3)
+    conv3 = KL.Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_3_3")(conv3)
 
     if bn:
-        conv3 = BatchNormalization()(conv3)
+        conv3 = KL.BatchNormalization(name="bn_conv_3_3")(conv3)
 
-    pool3 = MaxPooling2D(pool_size=(2, 2), data_format='channels_last')(conv3)
+    pool3 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name="mp_3")(conv3)
 
-    conv4 = Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool3)
+    conv4 = KL.Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_4")(pool3)
     if bn:
-        conv4 = BatchNormalization()(conv4)
+        conv4 = KL.BatchNormalization(name="bn_conv_4")(conv4)
         
-    conv4 = Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv4)
+    conv4 = KL.Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_4_4")(conv4)
 
     if bn:
-        conv4 = BatchNormalization()(conv4)
+        conv4 = KL.BatchNormalization(name="bn_conv_4_4")(conv4)
 
-    pool4 = MaxPooling2D(pool_size=(2, 2), data_format='channels_last')(conv4)
+    pool4 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name="mp_4")(conv4)
 
-    conv5 = Conv2D(n_filters * 16, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(pool4)
+    conv5 = KL.Conv2D(n_filters * 16, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_5")(pool4)
     if bn:
-        conv5 = BatchNormalization()(conv5)
+        conv5 = KL.BatchNormalization(name="bn_conv5")(conv5)
         
-    conv5 = Conv2D(n_filters * 16, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv5)
+    conv5 = KL.Conv2D(n_filters * 16, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_5_5")(conv5)
     if bn:
-        conv5 = BatchNormalization()(conv5)
+        conv5 = KL.BatchNormalization(name="bn_conv5_5")(conv5)
         
-    up6 = concatenate([Conv2D(n_filters * 8, (2 ,2), activation='relu', padding='same',
-                 dilation_rate=dilation_rate, kernel_initializer = 'he_normal')(UpSampling2D(size=(2, 2))(conv5)), conv4], axis=3)
+    up6 = KL.concatenate([KL.Conv2D(n_filters * 8, (2 ,2), activation='relu', padding='same',
+                 dilation_rate=dilation_rate, kernel_initializer = 'he_normal', name="conv_6")(KL.UpSampling2D(size=(2, 2), name="up_6")(conv5)), conv4], name = "conct_6" ,axis = 3)
     
-    conv6 = Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(up6)
+    conv6 = KL.Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_6_6")(up6)
     if bn:
-        conv6 = BatchNormalization()(conv6)
+        conv6 = KL.BatchNormalization(name="bn_conv_6")(conv6)
         
-    conv6 = Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv6)
+    conv6 = KL.Conv2D(n_filters * 8, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_6_6_6")(conv6)
     if bn:
-        conv6 = BatchNormalization()(conv6)
+        conv6 = KL.BatchNormalization(name="bn_conv_6_6")(conv6)
         
-    up7 = concatenate([Conv2D(n_filters * 4, (2 ,2), activation='relu', padding='same',
-                 dilation_rate=dilation_rate, kernel_initializer = 'he_normal')(UpSampling2D(size=(2, 2))(conv6)), conv3], axis=3, name = 'conc_7')
+    up7 = KL.concatenate([KL.Conv2D(n_filters * 4, (2 ,2), activation='relu', padding='same',
+                 dilation_rate=dilation_rate, kernel_initializer = 'he_normal', name="conv_7")(KL.UpSampling2D(size=(2, 2), name="up_7")(conv6)), conv3], axis=3, name = 'conc_7')
     
-    conv7 = Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(up7)
+    conv7 = KL.Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name="conv_7_7")(up7)
     if bn:
-        conv7 = BatchNormalization()(conv7)
+        conv7 = KL.BatchNormalization(name="bn_conv_7")(conv7)
         
-    conv7 = Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv7)
+    conv7 = KL.Conv2D(n_filters * 4, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal', name = "conv_7_7_7")(conv7)
     if bn:
-        conv7 = BatchNormalization()(conv7)
+        conv7 = KL.BatchNormalization(name="bn_conv_7_7")(conv7)
        
-    up8 = concatenate([Conv2D(n_filters * 2, (2 ,2), activation='relu', padding='same',
-                 dilation_rate=dilation_rate, kernel_initializer = 'he_normal')(UpSampling2D(size=(2, 2))(conv7)), conv2], axis=3, name = 'conc_8')
+    up8 = KL.concatenate([KL.Conv2D(n_filters * 2, (2 ,2), activation='relu', padding='same',
+                 dilation_rate=dilation_rate, kernel_initializer = 'he_normal')(KL.UpSampling2D(size=(2, 2))(conv7)), conv2], axis=3, name = 'conc_8')
     
-    conv8 = Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(up8)
+    conv8 = KL.Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(up8)
     if bn:
-        conv8 = BatchNormalization()(conv8)
+        conv8 = KL.BatchNormalization()(conv8)
         
-    conv8 = Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv8)
+    conv8 = KL.Conv2D(n_filters * 2, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv8)
     if bn:
-        conv8 = BatchNormalization()(conv8)
+        conv8 = KL.BatchNormalization()(conv8)
        
-    up9 = concatenate([Conv2D(n_filters * 8, (2 ,2), activation='relu', padding='same',
-                 dilation_rate=dilation_rate, kernel_initializer = 'he_normal')(UpSampling2D(size=(2, 2))(conv8)), conv1], axis=3, name = 'conc_9')
+    up9 = KL.concatenate([KL.Conv2D(n_filters * 8, (2 ,2), activation='relu', padding='same',
+                 dilation_rate=dilation_rate, kernel_initializer = 'he_normal')(KL.UpSampling2D(size=(2, 2))(conv8)), conv1], axis=3, name = 'conc_9')
     
-    conv9 = Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate)(up9)
+    conv9 = KL.Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate)(up9)
     if bn:
-        conv9 = BatchNormalization()(conv9)
+        conv9 = KL.BatchNormalization()(conv9)
         
-    conv9 = Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv9)
+    conv9 = KL.Conv2D(n_filters * 1, (3, 3), activation='relu', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv9)
     if bn:
-        conv9 = BatchNormalization()(conv9)
+        conv9 = KL.BatchNormalization()(conv9)
+    
+    if output_channels == 1:
+        last_activation = "sigmoid"
+    else:
+        last_activation = "softmax"
         
-    conv10 = Conv2D(output_channels, (1, 1), activation='softmax', padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv9)
-#    conv10 = Conv2D(output_channels, (1, 1), padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv9)
+    conv10 = KL.Conv2D(output_channels, (1, 1), activation=last_activation, padding = 'same', dilation_rate = dilation_rate, kernel_initializer = 'he_normal')(conv9)
+    
+    if not use_rpn:
+        model = KM.Model(inputs=input_image, outputs=conv10)
+        model.compile(optimizer=Adam(lr=3e-5), loss=loss_func, metrics=['categorical_accuracy'])
+    else:
+        ####################################################################################################################
+        #####                                                RPN MODEL                                                 #####
+        ####################################################################################################################
+    
+        # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the decoder.
+        rpn = build_rpn_model(depth = n_filters * 16) # Conv5
+        rpn_output = rpn([conv5])
 
-    model = Model(inputs=inputs, outputs=conv10)
-    model.compile(optimizer=Adam(lr=3e-5), loss=loss_func, metrics=['categorical_accuracy'])
+        # RPN Output
+        rpn_class_logits, rpn_class, rpn_bbox = rpn_output
 
-    print(model.summary())
+        # RPN GT
+        input_rpn_match = KL.Input(shape=[None, 1], name="input_rpn_match", dtype=tf.int32)
+        input_rpn_bbox = KL.Input(shape=[None, 4], name="input_rpn_bbox", dtype=tf.float32)
+
+        # RPN Loss
+        rpn_class_loss = KL.Lambda(lambda x: rpn.class_loss_graph(*x), name="rpn_class_loss")([input_rpn_match, rpn_class_logits])
+        rpn_bbox_loss = KL.Lambda(lambda x: rpn.bbox_loss_graph(config, *x), name="rpn_bbox_loss")([input_rpn_bbox, input_rpn_match, rpn_bbox])
+
+        # Input of the model
+        inputs = [input_image, input_rpn_match, input_rpn_bbox]
+
+        # Output of the model
+        outputs = [conv10,
+                   rpn_class_logits, 
+                   rpn_class, 
+                   rpn_bbox, 
+                   rpn_class_loss, 
+                   rpn_bbox_loss]
+
+        model = KM.Model(inputs, outputs, name='r-unet')
+
+        # These two losses can not be passed as default loss because they do not accept y_true, y_pred
+        # for this reason are added via add_loss. 
+        loss_names = ["rpn_class_loss",  "rpn_bbox_loss"]
+
+        for name in loss_names:
+            layer = model.get_layer(name)
+            if layer.output in model.losses:
+                continue
+            loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
+            model.add_loss(loss)
+
+        model.compile(optimizer=Adam(lr=3e-5), loss=[loss_func, None, None, None, None, None])
 
     return model
+    
