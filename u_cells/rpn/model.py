@@ -1,20 +1,8 @@
-from typing import Callable, Union
-
-import numpy as np 
-import os
-
-from tensorflow.keras.optimizers import *
-from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler
-from tensorflow.keras import losses
 import tensorflow.keras.models as KM
 import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
-import tensorflow.keras.layers as KE
 import tensorflow as tf
 
-############################################################
-#  Region Proposal Network (RPN)
-############################################################
 
 def rpn_graph(feature_map, anchors_per_location, anchor_stride):
     """Builds the computation graph of Region Proposal Network.
@@ -25,13 +13,12 @@ def rpn_graph(feature_map, anchors_per_location, anchor_stride):
                    every pixel in the feature map), or 2 (every other pixel).
 
     Returns:
-        rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
+        rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before
+                          softmax)
         rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
         rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
                   applied to anchors.
     """
-    # TODO: check if stride of 2 causes alignment issues if the feature map
-    # is not even.
     # Shared convolutional base of the RPN
     shared = KL.Conv2D(512, (3, 3), padding='same', activation='relu',
                        strides=anchor_stride,
@@ -59,7 +46,8 @@ def rpn_graph(feature_map, anchors_per_location, anchor_stride):
 
     return [rpn_class_logits, rpn_probs, rpn_bbox]
 
-def build_rpn_model(anchor_stride = 1, anchors_per_location = 3, depth = 256):
+
+def build_rpn_model(anchor_stride=1, anchors_per_location=3, depth=256):
     """Builds a Keras model of the Region Proposal Network.
     It wraps the RPN graph so it can be used multiple times with shared
     weights.
@@ -76,14 +64,13 @@ def build_rpn_model(anchor_stride = 1, anchors_per_location = 3, depth = 256):
         rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
                   applied to anchors.
     """
-    input_feature_map = KL.Input(shape=[None, None, depth],
-                                 name="input_rpn_feature_map")
+    input_feature_map = KL.Input(shape=[None, None, depth], name="input_rpn_feature_map")
     outputs = rpn_graph(input_feature_map, anchors_per_location, anchor_stride)
     return KM.Model([input_feature_map], outputs, name="rpn_model")
 
 
 def class_loss_graph(rpn_match, rpn_class_logits):
-    """RPN anchor classifier loss.
+    """ RPN anchor classifier loss.
     
     Args:
         rpn_match: [batch, anchors, 1]. Anchor match type. 1=positive,
@@ -108,16 +95,35 @@ def class_loss_graph(rpn_match, rpn_class_logits):
     return loss
 
 
-def bbox_loss_graph(config, target_bbox, rpn_match, rpn_bbox):
-    """Return the RPN bounding box loss graph.
-    
-    Args:
-        config: the model config object.
-        target_bbox: [batch, max positive anchors, (dy, dx, log(dh), log(dw))].
-         Uses 0 padding to fill in unsed bbox deltas.
-        rpn_match: [batch, anchors, 1]. Anchor match type. 1=positive, -1=negative, 0=neutral anchor.
-        rpn_bbox: [batch, anchors, (dy, dx, log(dh), log(dw))]
+def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
     """
+
+    Args:
+        target_bbox: [batch, max positive anchors, (dy, dx, log(dh), log(dw))]. Uses 0 padding to
+                    fill in unsed bbox deltas.
+        rpn_match: [batch, anchors, 1]. Anchor match type. 1=pos, -1=neg, 0=neutral anchor.
+        rpn_bbox: [batch, anchors, (dy, dx, log(dh), log(dw))]
+
+    Returns:
+
+    """
+
+    def batch_pack_graph(x, counts, num_rows):
+        """ Picks different number of values from each row in x depending on the values in counts.
+
+        Args:
+            x:
+            counts:
+            num_rows:
+
+        Returns:
+
+        """
+        outputs = []
+        for i in range(num_rows):
+            outputs.append(x[i, :counts[i]])
+        return tf.concat(outputs, axis=0)
+
     # Positive anchors contribute to the loss, but negative and
     # neutral anchors (match value of 0 or -1) don't.
     rpn_match = K.squeeze(rpn_match, -1)
@@ -128,20 +134,28 @@ def bbox_loss_graph(config, target_bbox, rpn_match, rpn_bbox):
 
     # Trim target bounding box deltas to the same length as rpn_bbox.
     batch_counts = K.sum(K.cast(K.equal(rpn_match, 1), tf.int32), axis=1)
-    target_bbox = batch_pack_graph(target_bbox, batch_counts,
-                                   config.IMAGES_PER_GPU)
+    # IMAGE_PER_GPU = 4 , from the sample
+    target_bbox = batch_pack_graph(target_bbox, batch_counts, 4)
 
     loss = smooth_l1_loss(target_bbox, rpn_bbox)
 
     loss = K.switch(tf.size(input=loss) > 0, K.mean(loss), tf.constant(0.0))
     return loss
 
+
 def smooth_l1_loss(y_true, y_pred):
-    """Implements Smooth-L1 loss.
+    """ Implements Smooth-L1 loss.
+
     y_true and y_pred are typically: [N, 4], but could be any shape.
+
+    Args:
+        y_true:
+        y_pred:
+
+    Returns:
+
     """
     diff = K.abs(y_true - y_pred)
     less_than_one = K.cast(K.less(diff, 1.0), "float32")
-    loss = (less_than_one * 0.5 * diff**2) + (1 - less_than_one) * (diff - 0.5)
+    loss = (less_than_one * 0.5 * diff ** 2) + (1 - less_than_one) * (diff - 0.5)
     return loss
-
