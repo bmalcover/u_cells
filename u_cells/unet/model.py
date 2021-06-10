@@ -370,7 +370,7 @@ class UNet:
         if callbacks is None:
             callbacks = []
 
-        if check_point_path is None:
+        if check_point_path is not None:
             callbacks.append(
                 tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
                                                    save_weights_only=False, save_best_only=True))
