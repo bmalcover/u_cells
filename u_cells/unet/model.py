@@ -13,7 +13,7 @@ Loss functions:
     Sorensen coefficient
     Jaccard coefficient
 """
-from typing import Callable, Union, Tuple
+from typing import Callable, Union, Tuple, List
 import warnings
 
 import numpy as np
@@ -123,7 +123,105 @@ class UNet:
         self.__keras_model = None
         self.__is_trained = False
 
-    def build_unet(self, n_filters=16, dilation_rate=1):
+    def __build_encoder(self, n_filters: int, start_layer, n_blocks: int, name: str = "encode",
+                        dilation_rate: int = 1, initial_block_id: int = 0):
+        """ Build encoder for U-Net.
+
+        The encoder has the form of a traditional CNN. The start layer must be an Input image while
+        the last layer output will an embedded vector coding the information of the image.
+
+        Args:
+            n_filters:
+            start_layer:
+            n_blocks:
+            name:
+            dilation_rate:
+            initial_block_id:
+
+        Returns:
+
+        """
+        bn: bool = self.__batch_normalization
+
+        layers = {}
+        prev_layer = start_layer
+        for i in range(initial_block_id, initial_block_id + n_blocks):
+            dict_key = name + "_" + str(i + 1)
+            layers[dict_key] = []
+
+            n_filters_layer = n_filters * (2 ** i)
+
+            conv1 = KL.Conv2D(n_filters_layer, (3, 3), activation='relu', padding='same',
+                              dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                              name=f"conv_{i + 1}")(prev_layer)
+            layers[dict_key].append(conv1)
+
+            if bn:
+                conv1 = KL.BatchNormalization(name="bn_conv_1")(conv1)
+                layers[dict_key].append(conv1)
+
+            conv1 = KL.Conv2D(n_filters_layer, (3, 3), activation='relu', padding='same',
+                              dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                              name=f"conv_{i + 1}_{i + 1}")(conv1)
+            layers[dict_key].append(conv1)
+
+            if bn:
+                conv1 = KL.BatchNormalization(name=f"bn_conv_{i + 1}_{i + 1}")(conv1)
+                layers[dict_key].append(conv1)
+
+            pool1 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last',
+                                    name=f"mp_{i + 1}")(conv1)
+            layers[dict_key].append(pool1)
+
+            prev_layer = pool1
+
+        return layers
+
+    def __build_decoder(self, encoder, filters: List[int], name: str = "decode",
+                        dilation_rate: int = 1, initial_block_id: int = 0):
+        bn: bool = self.__batch_normalization
+
+        layers = {}
+        prev_layer = list(encoder.values())[-1][-1]
+
+        encoder_layers = list(encoder.values())[::-1]
+        for i, (filter_per_layer, enc_layer) in enumerate(zip(filters, encoder_layers)):
+            block_id: int = initial_block_id + i
+            dict_key = name + "_" + str(block_id)
+
+            layers[dict_key] = []
+
+            up6 = KL.concatenate(
+                [KL.Conv2D(filter_per_layer, (2, 2), activation='relu', padding='same',
+                           dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                           name=f"conv_{block_id}")(
+                    KL.UpSampling2D(size=(2, 2), name=f"up_{block_id}")(prev_layer)),
+                    enc_layer[-1]], name="conct_6", axis=3)
+            layers[dict_key].append(up6)
+
+            conv6 = KL.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
+                              dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                              name=f"conv_{block_id}_{block_id}")(up6)
+            layers[dict_key].append(conv6)
+
+            if bn:
+                conv6 = KL.BatchNormalization(name=f"bn_conv_{block_id}")(conv6)
+                layers[dict_key].append(conv6)
+
+            conv6 = KL.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
+                              dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                              name=f"conv_{block_id}_{block_id}_{block_id}")(conv6)
+            layers[dict_key].append(conv6)
+
+            if bn:
+                conv6 = KL.BatchNormalization(name=f"bn_conv_{block_id}_{block_id}")(conv6)
+                layers[dict_key].append(conv6)
+
+            prev_layer = conv6
+
+        return layers
+
+    def build_unet(self, n_filters=16, dilation_rate: int = 1):
         """ Builds the graph and model for the U-Net.
 
         The U-Net, first introduced by Ronnenberger et al., is an encoder-decoder architecture.
@@ -137,152 +235,13 @@ class UNet:
 
         # Define input batch shape
         input_image = KL.Input(self.__input_size, name="input_image")
+        encoder = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=5,
+                                       dilation_rate=dilation_rate)
 
-        conv1 = KL.Conv2D(n_filters * 1, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_1")(input_image)
-        if bn:
-            conv1 = KL.BatchNormalization(name="bn_conv_1")(conv1)
-
-        conv1 = KL.Conv2D(n_filters * 1, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_1_1")(
-            conv1)
-
-        if bn:
-            conv1 = KL.BatchNormalization(name="bn_conv_1_1")(conv1)
-
-        pool1 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name='mp_1')(conv1)
-
-        conv2 = KL.Conv2D(n_filters * 2, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_2")(
-            pool1)
-        if bn:
-            conv2 = KL.BatchNormalization(name="bn_conv_2")(conv2)
-
-        conv2 = KL.Conv2D(n_filters * 2, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_2_2")(
-            conv2)
-        if bn:
-            conv2 = KL.BatchNormalization(name="bn_conv_2_2")(conv2)
-
-        pool2 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name="mp_2")(conv2)
-
-        conv3 = KL.Conv2D(n_filters * 4, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_3")(
-            pool2)
-        if bn:
-            conv3 = KL.BatchNormalization(name="bn_conv_3")(conv3)
-
-        conv3 = KL.Conv2D(n_filters * 4, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_3_3")(
-            conv3)
-
-        if bn:
-            conv3 = KL.BatchNormalization(name="bn_conv_3_3")(conv3)
-
-        pool3 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name="mp_3")(conv3)
-
-        conv4 = KL.Conv2D(n_filters * 8, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_4")(
-            pool3)
-        if bn:
-            conv4 = KL.BatchNormalization(name="bn_conv_4")(conv4)
-
-        conv4 = KL.Conv2D(n_filters * 8, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_4_4")(
-            conv4)
-
-        if bn:
-            conv4 = KL.BatchNormalization(name="bn_conv_4_4")(conv4)
-
-        pool4 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name="mp_4")(conv4)
-
-        conv5 = KL.Conv2D(n_filters * 16, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_5")(
-            pool4)
-        if bn:
-            conv5 = KL.BatchNormalization(name="bn_conv5")(conv5)
-
-        conv5 = KL.Conv2D(n_filters * 16, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_5_5")(
-            conv5)
-        if bn:
-            conv5 = KL.BatchNormalization(name="bn_conv5_5")(conv5)
-
-        up6 = KL.concatenate([KL.Conv2D(n_filters * 8, (2, 2), activation='relu', padding='same',
-                                        dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                        name="conv_6")(
-            KL.UpSampling2D(size=(2, 2), name="up_6")(conv5)), conv4], name="conct_6", axis=3)
-
-        conv6 = KL.Conv2D(n_filters * 8, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_6_6")(
-            up6)
-        if bn:
-            conv6 = KL.BatchNormalization(name="bn_conv_6")(conv6)
-
-        conv6 = KL.Conv2D(n_filters * 8, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_6_6_6")(conv6)
-        if bn:
-            conv6 = KL.BatchNormalization(name="bn_conv_6_6")(conv6)
-
-        up7 = KL.concatenate([KL.Conv2D(n_filters * 4, (2, 2), activation='relu', padding='same',
-                                        dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                        name="conv_7")(
-            KL.UpSampling2D(size=(2, 2), name="up_7")(conv6)), conv3], axis=3, name='conc_7')
-
-        conv7 = KL.Conv2D(n_filters * 4, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_7_7")(
-            up7)
-        if bn:
-            conv7 = KL.BatchNormalization(name="bn_conv_7")(conv7)
-
-        conv7 = KL.Conv2D(n_filters * 4, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                          name="conv_7_7_7")(conv7)
-        if bn:
-            conv7 = KL.BatchNormalization(name="bn_conv_7_7")(conv7)
-
-        up8 = KL.concatenate([KL.Conv2D(n_filters * 2, (2, 2), activation='relu', padding='same',
-                                        dilation_rate=dilation_rate,
-                                        kernel_initializer='he_normal')(
-            KL.UpSampling2D(size=(2, 2))(conv7)), conv2], axis=3, name='conc_8')
-
-        conv8 = KL.Conv2D(n_filters * 2, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal')(up8)
-        if bn:
-            conv8 = KL.BatchNormalization()(conv8)
-
-        conv8 = KL.Conv2D(n_filters * 2, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal')(conv8)
-        if bn:
-            conv8 = KL.BatchNormalization()(conv8)
-
-        up9 = KL.concatenate([KL.Conv2D(n_filters * 8, (2, 2), activation='relu', padding='same',
-                                        dilation_rate=dilation_rate,
-                                        kernel_initializer='he_normal')(
-            KL.UpSampling2D(size=(2, 2))(conv8)), conv1], axis=3, name='conc_9')
-
-        conv9 = KL.Conv2D(n_filters * 1, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate)(up9)
-        if bn:
-            conv9 = KL.BatchNormalization()(conv9)
-
-        conv9 = KL.Conv2D(n_filters * 1, (3, 3), activation='relu', padding='same',
-                          dilation_rate=dilation_rate, kernel_initializer='he_normal')(conv9)
-        if bn:
-            conv9 = KL.BatchNormalization()(conv9)
+        decoder = self.__build_decoder(encoder=encoder, dilation_rate=dilation_rate,
+                                       initial_block_id=6,
+                                       filters=[n_filters * 8, n_filters * 4, n_filters * 2,
+                                                n_filters * 1])
 
         if self.__n_channels == 1:
             last_activation = "sigmoid"
@@ -290,7 +249,8 @@ class UNet:
             last_activation = "softmax"
 
         conv10 = KL.Conv2D(self.__n_channels, (1, 1), activation=last_activation, padding='same',
-                           dilation_rate=dilation_rate, kernel_initializer='he_normal')(conv9)
+                           dilation_rate=dilation_rate, kernel_initializer='he_normal')(
+            list(decoder.values())[-1][-1])
 
         if not self.__build_rpn:
             model = KM.Model(inputs=input_image, outputs=conv10)
@@ -300,7 +260,7 @@ class UNet:
             # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the
             # decoder.
             rpn = rpn_model.build_rpn_model(depth=n_filters * 16)  # Conv5
-            rpn_output = rpn([conv5])
+            rpn_output = rpn([list(encoder.values())[-1][-1]])
 
             # RPN Output
             rpn_class_logits, rpn_class, rpn_bbox = rpn_output
@@ -359,7 +319,7 @@ class UNet:
                 loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
                 self.__keras_model.add_loss(loss)
 
-            self.__keras_model.compile(optimizer=Adam(lr= self.__config.LEARNING_RATE),
+            self.__keras_model.compile(optimizer=Adam(lr=self.__config.LEARNING_RATE),
                                        loss=[loss_func, None, None, None, None, None])
 
     def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
