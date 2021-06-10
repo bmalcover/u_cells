@@ -24,8 +24,8 @@ import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
 import tensorflow as tf
 
-from u_cells.common import config
-from u_cells.rpn import model as rpn_model
+from u_cells.u_cells.common import config
+from u_cells.u_cells.rpn import model as rpn_model
 
 
 def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[
@@ -157,7 +157,7 @@ class UNet:
             layers[dict_key].append(conv1)
 
             if bn:
-                conv1 = KL.BatchNormalization(name="bn_conv_1")(conv1)
+                conv1 = KL.BatchNormalization(name=f"bn_conv_{i + 1}")(conv1)
                 layers[dict_key].append(conv1)
 
             conv1 = KL.Conv2D(n_filters_layer, (3, 3), activation='relu', padding='same',
@@ -168,12 +168,14 @@ class UNet:
             if bn:
                 conv1 = KL.BatchNormalization(name=f"bn_conv_{i + 1}_{i + 1}")(conv1)
                 layers[dict_key].append(conv1)
+            
+            if (i + 1) != initial_block_id + n_blocks:
+                pool1 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last',
+                                        name=f"mp_{i + 1}")(conv1)
+                layers[dict_key].append(pool1)
 
-            pool1 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last',
-                                    name=f"mp_{i + 1}")(conv1)
-            layers[dict_key].append(pool1)
-
-            prev_layer = pool1
+                prev_layer = pool1
+                
 
         return layers
 
@@ -184,7 +186,8 @@ class UNet:
         layers = {}
         prev_layer = list(encoder.values())[-1][-1]
 
-        encoder_layers = list(encoder.values())[::-1]
+        encoder_layers = list(encoder.values())[:-1]        
+        encoder_layers = encoder_layers[::-1]
         for i, (filter_per_layer, enc_layer) in enumerate(zip(filters, encoder_layers)):
             block_id: int = initial_block_id + i
             dict_key = name + "_" + str(block_id)
@@ -196,7 +199,7 @@ class UNet:
                            dilation_rate=dilation_rate, kernel_initializer='he_normal',
                            name=f"conv_{block_id}")(
                     KL.UpSampling2D(size=(2, 2), name=f"up_{block_id}")(prev_layer)),
-                    enc_layer[-1]], name="conct_6", axis=3)
+                    enc_layer[-2]], name=f"conct_{block_id}", axis=3)
             layers[dict_key].append(up6)
 
             conv6 = KL.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
@@ -235,7 +238,7 @@ class UNet:
 
         # Define input batch shape
         input_image = KL.Input(self.__input_size, name="input_image")
-        encoder = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=5,
+        encoder = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=4,
                                        dilation_rate=dilation_rate)
 
         decoder = self.__build_decoder(encoder=encoder, dilation_rate=dilation_rate,
