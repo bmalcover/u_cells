@@ -98,7 +98,7 @@ class DataGenerator(KU.Sequence):
             self.__regression_data = json.load(open(do_regression))
         else:
             self.__regression_data = None
-            
+
         self.__generator = self.__get_merged_info()
 
     def __get_merged_info(self):
@@ -130,12 +130,12 @@ class DataGenerator(KU.Sequence):
                 n_cells = []
                 for filename in batch_filenames:
                     region_key = os.path.split(filename)[-1].split(".")[0]
-                    
+
                     n_cells.append(len(list(self.__regression_data.values())[int(region_key)]["regions"]))
-                    
+
                 n_cells = np.array(n_cells)
-                
-                yield img, mask, n_cells
+
+                yield img, {"img_out": mask, 'regressor_output': n_cells}
 
     def __len__(self):
         return self.__steps
