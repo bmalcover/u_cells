@@ -302,10 +302,10 @@ class UNet:
                            dilation_rate=dilation_rate, kernel_initializer='he_normal', name="img_out")(
             list(decoder.values())[-1][-1])
 
-        if not self.__build_rpn:
-            model = KM.Model(inputs=input_image, outputs=conv10)
-        elif not self.__build_rpn and self.__build_regressor:
+        if not self.__build_rpn and self.__build_regressor:
             model = KM.Model(inputs=input_image, outputs=[conv10, regressor[-1]])
+        elif not self.__build_rpn:
+            model = KM.Model(inputs=input_image, outputs=conv10)
         else:
             if config is None:
                 raise AttributeError("Config for RPN model not defined")
