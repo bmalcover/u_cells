@@ -5,6 +5,7 @@ from enum import Enum
 
 import numpy as np
 import json
+from icecream import ic
 
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import utils as KU
@@ -97,7 +98,7 @@ class DataGenerator(KU.Sequence):
             self.__regression_data = json.load(open(do_regression))
         else:
             self.__regression_data = None
-
+            
         self.__generator = self.__get_merged_info()
 
     def __get_merged_info(self):
@@ -124,12 +125,17 @@ class DataGenerator(KU.Sequence):
 
             if self.__regression_data is not None:
                 idx = (self.__image_generator.batch_index - 1) * self.__image_generator.batch_size
-                filename = self.__image_generator.filenames[idx: idx + self.__image_generator.batch_size]
+                batch_filenames = self.__image_generator.filenames[idx: idx + self.__image_generator.batch_size]
 
-                _, name = os.path.split(filename)
-                n_cells = len(self.__regression_data[name]["regions"])
-
-                yield img, mask, n_cells,
+                n_cells = []
+                for filename in batch_filenames:
+                    region_key = os.path.split(filename)[-1].split(".")[0]
+                    
+                    n_cells.append(len(list(self.__regression_data.values())[int(region_key)]["regions"]))
+                    
+                n_cells = np.array(n_cells)
+                
+                yield img, mask, n_cells
 
     def __len__(self):
         return self.__steps

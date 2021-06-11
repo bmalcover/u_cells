@@ -24,8 +24,8 @@ import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
 import tensorflow as tf
 
-from u_cells.common import config
-from u_cells.rpn import model as rpn_model
+from u_cells.u_cells.common import config
+from u_cells.u_cells.rpn import model as rpn_model
 
 
 def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[
@@ -240,7 +240,7 @@ class UNet:
                                name=f"conv_{block_id}_{block_id}")(last_layer)
         layers.append(last_layer)
 
-        last_layer = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name=f"mp_{block_id}")
+        last_layer = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name=f"mp_{block_id}")(last_layer)
         layers.append(last_layer)
 
         block_id = initial_block_id + 2
@@ -389,11 +389,13 @@ class UNet:
             callbacks.append(
                 tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
                                                    save_weights_only=False, save_best_only=True))
-
-        self.__keras_model.fit(train_generator, validation_data=val_generator, epochs=epochs,
-                               validation_steps=validation_steps, callbacks=callbacks,
-                               steps_per_epoch=steps_per_epoch)
-
+        
+        if val_generator is not None:
+            self.__keras_model.fit(train_generator, validation_data=val_generator, epochs=epochs,
+                                   validation_steps=validation_steps, callbacks=callbacks,
+                                   steps_per_epoch=steps_per_epoch)
+        else:
+            self.__keras_model.fit(train_generator, epochs=epochs, callbacks=callbacks, steps_per_epoch=steps_per_epoch)
         self.__is_trained = True
 
     @property
