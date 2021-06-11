@@ -121,7 +121,7 @@ class DataGenerator(KU.Sequence):
         std = 1
 
         if normalize:
-            mean_std = np.array([len(v) for v in info.values()])
+            mean_std = np.array([len(v["regions"]) for v in info.values()])
             mean = mean_std.mean()
             std = mean_std.std()
 

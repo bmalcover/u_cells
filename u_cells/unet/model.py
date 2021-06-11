@@ -257,6 +257,9 @@ class UNet:
                                name=f"conv_{block_id}_{block_id}")(last_layer)
         layers.append(last_layer)
 
+        last_layer = KL.Flatten()(last_layer)
+        layers.append(last_layer)
+
         last_layer = KL.Dense(1024, name="dense_1")(last_layer)
         layers.append(last_layer)
 
