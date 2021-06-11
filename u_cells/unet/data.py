@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-
+import os
 from typing import Tuple, Union
 from enum import Enum
 
 import numpy as np
+import json
 
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import utils as KU
@@ -63,7 +64,8 @@ class DataGenerator(KU.Sequence):
 
     def __init__(self, steps: int, batch_size: int, path: str, image_folder: str, mask_folder: str,
                  aug_dict: dict, dcd_mode: Union[DecodeMode, None], img_color_mode: str,
-                 mask_color_mode: str, target_size: Tuple[int, int], seed: int = 1):
+                 mask_color_mode: str, target_size: Tuple[int, int], seed: int = 1,
+                 do_regression: Union[str, None] = None):
         self.__steps = steps
         self.__path = path
         self.__decode_mode = dcd_mode
@@ -91,6 +93,11 @@ class DataGenerator(KU.Sequence):
             seed=seed
         )
 
+        if do_regression is not None:
+            self.__regression_data = json.load(open(do_regression))
+        else:
+            self.__regression_data = None
+
         self.__generator = self.__get_merged_info()
 
     def __get_merged_info(self):
@@ -114,7 +121,15 @@ class DataGenerator(KU.Sequence):
                 mask = new_mask
 
             mask = mask / 255
-            yield img, mask
+
+            if self.__regression_data is not None:
+                idx = (self.__image_generator.batch_index - 1) * self.__image_generator.batch_size
+                filename = self.__image_generator.filenames[idx: idx + self.__image_generator.batch_size]
+
+                _, name = os.path.split(filename)
+                n_cells = len(self.__regression_data[name]["regions"])
+
+                yield img, mask, n_cells,
 
     def __len__(self):
         return self.__steps

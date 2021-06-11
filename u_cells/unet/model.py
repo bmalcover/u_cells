@@ -24,8 +24,8 @@ import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
 import tensorflow as tf
 
-from u_cells.u_cells.common import config
-from u_cells.u_cells.rpn import model as rpn_model
+from u_cells.common import config
+from u_cells.rpn import model as rpn_model
 
 
 def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[
@@ -112,11 +112,12 @@ def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=
 
 class UNet:
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]], out_channel: int,
-                 batch_normalization: bool, config_net: config.Config = None, rpn: bool = False):
+                 batch_normalization: bool, config_net: config.Config = None, rpn: bool = False, regressor: bool = False):
 
         self.__input_size: Tuple[int, int, int] = input_size
         self.__batch_normalization: bool = batch_normalization
         self.__build_rpn: bool = rpn
+        self.__build_regressor: bool = regressor
         self.__n_channels: int = out_channel
         self.__config = config_net
 
@@ -168,14 +169,13 @@ class UNet:
             if bn:
                 conv1 = KL.BatchNormalization(name=f"bn_conv_{i + 1}_{i + 1}")(conv1)
                 layers[dict_key].append(conv1)
-            
+
             if (i + 1) != initial_block_id + n_blocks:
                 pool1 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last',
                                         name=f"mp_{i + 1}")(conv1)
                 layers[dict_key].append(pool1)
 
                 prev_layer = pool1
-                
 
         return layers
 
@@ -186,7 +186,7 @@ class UNet:
         layers = {}
         prev_layer = list(encoder.values())[-1][-1]
 
-        encoder_layers = list(encoder.values())[:-1]        
+        encoder_layers = list(encoder.values())[:-1]
         encoder_layers = encoder_layers[::-1]
         for i, (filter_per_layer, enc_layer) in enumerate(zip(filters, encoder_layers)):
             block_id: int = initial_block_id + i
@@ -224,6 +224,49 @@ class UNet:
 
         return layers
 
+    def __build_cells_regressors(self, start_layer, initial_block_id: int, n_filters: int, dilation_rate: int):
+        layers = []
+        last_layer = start_layer
+
+        block_id = initial_block_id + 1
+        last_layer = KL.Conv2D(n_filters * (2 ** 3), (3, 3), dilation_rate=dilation_rate, activation='relu',
+                               padding='same',
+                               kernel_initializer='he_normal', name=f"conv_{block_id}")(last_layer)
+        layers.append(last_layer)
+
+        last_layer = KL.Conv2D(n_filters * (2 ** 3), (3, 3), dilation_rate=dilation_rate, activation='relu',
+                               padding='same',
+                               kernel_initializer='he_normal',
+                               name=f"conv_{block_id}_{block_id}")(last_layer)
+        layers.append(last_layer)
+
+        last_layer = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name=f"mp_{block_id}")
+        layers.append(last_layer)
+
+        block_id = initial_block_id + 2
+        last_layer = KL.Conv2D(n_filters * (2 ** 4), (3, 3), dilation_rate=dilation_rate, activation='relu',
+                               padding='same',
+                               kernel_initializer='he_normal',
+                               name=f"conv_{block_id}")(last_layer)
+        layers.append(last_layer)
+
+        last_layer = KL.Conv2D(n_filters * (2 ** 4), (3, 3), dilation_rate=dilation_rate, activation='relu',
+                               padding='same',
+                               kernel_initializer='he_normal',
+                               name=f"conv_{block_id}_{block_id}")(last_layer)
+        layers.append(last_layer)
+
+        last_layer = KL.Dense(1024, name="dense_1")(last_layer)
+        layers.append(last_layer)
+
+        last_layer = KL.Dense(1024, name="dense_2")(last_layer)
+        layers.append(last_layer)
+
+        last_layer = KL.Dense(1)(last_layer)
+        layers.append(last_layer)
+
+        return layers, block_id
+
     def build_unet(self, n_filters=16, dilation_rate: int = 1):
         """ Builds the graph and model for the U-Net.
 
@@ -234,15 +277,18 @@ class UNet:
             n_filters:
             dilation_rate:
         """
-        bn: bool = self.__batch_normalization
-
         # Define input batch shape
         input_image = KL.Input(self.__input_size, name="input_image")
         encoder = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=4,
                                        dilation_rate=dilation_rate)
 
+        if self.__build_regressor:
+            regressor, last_block_id = self.__build_cells_regressors(start_layer=list(encoder.values())[-1][-1],
+                                                                     initial_block_id=6,
+                                                                     n_filters=n_filters, dilation_rate=dilation_rate)
+
         decoder = self.__build_decoder(encoder=encoder, dilation_rate=dilation_rate,
-                                       initial_block_id=6,
+                                       initial_block_id=last_block_id + 1,
                                        filters=[n_filters * 8, n_filters * 4, n_filters * 2,
                                                 n_filters * 1])
 
@@ -257,6 +303,8 @@ class UNet:
 
         if not self.__build_rpn:
             model = KM.Model(inputs=input_image, outputs=conv10)
+        elif not self.__build_rpn and self.__build_regressor:
+            model = KM.Model(inputs=input_image, outputs=[conv10, regressor[-1]])
         else:
             if config is None:
                 raise AttributeError("Config for RPN model not defined")
@@ -307,8 +355,12 @@ class UNet:
 
         """
         if not self.__build_rpn:
-            self.__keras_model.compile(optimizer=Adam(lr=3e-5), loss=loss_func,
-                                       metrics=['categorical_accuracy'])
+            loss_functions = [loss_func]
+
+            if self.__build_regressor:
+                loss_functions.append('mean_absolute_error')
+
+            self.__keras_model.compile(optimizer=Adam(lr=3e-5), loss=loss_functions, metrics=['categorical_accuracy'])
         else:
             # These two losses can not be passed as default loss because they do not accept y_true,
             # y_pred for this reason are added via add_loss.
