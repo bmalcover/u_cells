@@ -112,7 +112,8 @@ def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=
 
 class UNet:
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]], out_channel: int,
-                 batch_normalization: bool, config_net: config.Config = None, rpn: bool = False, regressor: bool = False):
+                 batch_normalization: bool, config_net: config.Config = None, rpn: bool = False,
+                 regressor: bool = False):
 
         self.__input_size: Tuple[int, int, int] = input_size
         self.__batch_normalization: bool = batch_normalization
@@ -262,7 +263,7 @@ class UNet:
         last_layer = KL.Dense(1024, name="dense_2")(last_layer)
         layers.append(last_layer)
 
-        last_layer = KL.Dense(1)(last_layer)
+        last_layer = KL.Dense(1, name="regressor_output")(last_layer)
         layers.append(last_layer)
 
         return layers, block_id
@@ -298,7 +299,7 @@ class UNet:
             last_activation = "softmax"
 
         conv10 = KL.Conv2D(self.__n_channels, (1, 1), activation=last_activation, padding='same',
-                           dilation_rate=dilation_rate, kernel_initializer='he_normal')(
+                           dilation_rate=dilation_rate, kernel_initializer='he_normal', name="img_out")(
             list(decoder.values())[-1][-1])
 
         if not self.__build_rpn:
@@ -355,10 +356,10 @@ class UNet:
 
         """
         if not self.__build_rpn:
-            loss_functions = [loss_func]
+            loss_functions = {"img_out": loss_func}
 
             if self.__build_regressor:
-                loss_functions.append('mean_absolute_error')
+                loss_functions['regressor_output'] = 'mean_absolute_error'
 
             self.__keras_model.compile(optimizer=Adam(lr=3e-5), loss=loss_functions, metrics=['categorical_accuracy'])
         else:
@@ -379,6 +380,21 @@ class UNet:
 
     def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
               validation_steps: int, check_point_path: Union[str, None], callbacks=None):
+        """ Trains the model with the info passed as parameters.
+
+        The keras model is trained with the information passed as parameters. The info is defined
+        Args:
+            train_generator:
+            val_generator:
+            epochs:
+            steps_per_epoch:
+            validation_steps:
+            check_point_path:
+            callbacks:
+
+        Returns:
+
+        """
         if self.__is_trained:
             warnings.warn("Model already trained, starting new training")
 
@@ -389,7 +405,7 @@ class UNet:
             callbacks.append(
                 tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
                                                    save_weights_only=False, save_best_only=True))
-        
+
         if val_generator is not None:
             self.__keras_model.fit(train_generator, validation_data=val_generator, epochs=epochs,
                                    validation_steps=validation_steps, callbacks=callbacks,
