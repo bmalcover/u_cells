@@ -24,8 +24,8 @@ import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
 import tensorflow as tf
 
-from u_cells.u_cells.common import config
-from u_cells.u_cells.rpn import model as rpn_model
+from u_cells.common import config
+from u_cells.rpn import model as rpn_model
 
 
 def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[
