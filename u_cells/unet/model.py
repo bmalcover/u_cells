@@ -140,44 +140,49 @@ class UNet:
             initial_block_id:
 
         Returns:
-
+            encoder (dict): Dictionary containing the layers that defines the model. Each key-value is a different
+                            block of the encoder. Each value is a list containing all the layers (in order) of that
+                            block.
+            block_id (int): Last id used to define a name of a layer.
         """
         bn: bool = self.__batch_normalization
 
         layers = {}
         prev_layer = start_layer
+        block_id = initial_block_id
         for i in range(initial_block_id, initial_block_id + n_blocks):
-            dict_key = name + "_" + str(i + 1)
+            block_id = i + 1
+            dict_key = name + "_" + str(block_id)
             layers[dict_key] = []
 
             n_filters_layer = n_filters * (2 ** i)
 
             conv1 = KL.Conv2D(n_filters_layer, (3, 3), activation='relu', padding='same',
                               dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                              name=f"conv_{i + 1}")(prev_layer)
+                              name=f"conv_{block_id}")(prev_layer)
             layers[dict_key].append(conv1)
 
             if bn:
-                conv1 = KL.BatchNormalization(name=f"bn_conv_{i + 1}")(conv1)
+                conv1 = KL.BatchNormalization(name=f"bn_conv_{block_id}")(conv1)
                 layers[dict_key].append(conv1)
 
             conv1 = KL.Conv2D(n_filters_layer, (3, 3), activation='relu', padding='same',
                               dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                              name=f"conv_{i + 1}_{i + 1}")(conv1)
+                              name=f"conv_{block_id}_{block_id}")(conv1)
             layers[dict_key].append(conv1)
 
             if bn:
-                conv1 = KL.BatchNormalization(name=f"bn_conv_{i + 1}_{i + 1}")(conv1)
+                conv1 = KL.BatchNormalization(name=f"bn_conv_{block_id}_{block_id}")(conv1)
                 layers[dict_key].append(conv1)
 
             if (i + 1) != initial_block_id + n_blocks:
                 pool1 = KL.MaxPooling2D(pool_size=(2, 2), data_format='channels_last',
-                                        name=f"mp_{i + 1}")(conv1)
+                                        name=f"mp_{block_id}")(conv1)
                 layers[dict_key].append(pool1)
 
                 prev_layer = pool1
 
-        return layers
+        return layers, block_id
 
     def __build_decoder(self, encoder, filters: List[int], name: str = "decode",
                         dilation_rate: int = 1, initial_block_id: int = 0):
@@ -279,20 +284,21 @@ class UNet:
         Args:
             n_filters:
             dilation_rate:
+            n_blocks:
         """
         # Define input batch shape
         input_image = KL.Input(self.__input_size, name="input_image")
-        encoder = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=n_blocks,
-                                       dilation_rate=dilation_rate)
+        encoder, last_block_id = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=n_blocks,
+                                                      dilation_rate=dilation_rate)
 
         if self.__build_regressor:
             regressor, last_block_id = self.__build_cells_regressors(start_layer=list(encoder.values())[-1][-1],
                                                                      initial_block_id=6,
                                                                      n_filters=n_filters, dilation_rate=dilation_rate)
-        
+
         filters_size = [n_filters * (2 ** i) for i in range(0, n_blocks)]
         filters_size = filters_size[::-1]
-        
+
         decoder = self.__build_decoder(encoder=encoder, dilation_rate=dilation_rate,
                                        initial_block_id=last_block_id + 1,
                                        filters=filters_size)
