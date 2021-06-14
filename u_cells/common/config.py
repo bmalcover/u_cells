@@ -148,3 +148,5 @@ class Config(ABC):
         for key, val in self.to_dict().items():
             res += f"{key:30} {val}"
         res += "\n"
+
+        return res

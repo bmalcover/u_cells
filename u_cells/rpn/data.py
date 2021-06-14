@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from typing import Tuple
 import warnings
 
@@ -11,7 +12,7 @@ from tensorflow.keras import utils as KU
 from u_cells.rpn import utils
 
 
-class Dataset(object):
+class Dataset(ABC):
     """The base class for dataset classes.
     To use it, create a new class that adds functions specific to the dataset
     you want to use. For example:
@@ -57,12 +58,12 @@ class Dataset(object):
         image_info.update(kwargs)
         self.image_info.append(image_info)
 
+    @abstractmethod
     def image_reference(self, image_id):
         """Return a link to the image in its source Website or details about
         the image that help looking it up or debugging it.
 
-        Override for your dataset, but pass to this function
-        if you encounter images not in your dataset.
+        Override for your dataset, but pass to this function if you encounter images not in your dataset.
         """
         return ""
 
