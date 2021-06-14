@@ -8,9 +8,9 @@ Ronnenberger et al. and is based on a Encoder-Decoder architecture.
 from typing import Callable, Union, Tuple, List
 import warnings
 
-from tensorflow.keras.optimizers import *
 import tensorflow.keras.models as keras_model
 import tensorflow.keras.layers as keras_layer
+from tensorflow.keras.optimizers import *
 import tensorflow as tf
 
 from u_cells.common import config
@@ -96,10 +96,10 @@ class UNet:
                         dilation_rate: int = 1, initial_block_id: int = 0):
         """ Build the decoder model.
 
-        The decoder model of the U-Net is build upon the conjunction of UpSampling layers with Conv2D layers. The first
-        ones increase the size of the input using some "shallow" technique. After applying it the Conv2D refines the
-        output. The input of each block is the result of the previous block concatenate it with a feature map of the
-        encoder.
+        The decoder model of the U-Net is build upon the conjunction of UpSampling layers with
+        Conv2D layers. The first ones increase the size of the input using some "shallow" technique.
+        After applying it the Conv2D refines the output. The input of each block is the result of
+        the previous block concatenate it with a feature map of the encoder.
 
         Args:
             encoder:
@@ -154,7 +154,8 @@ class UNet:
 
         return layers
 
-    def __build_cells_regressors(self, start_layer, initial_block_id: int, n_filters: int, dilation_rate: int):
+    def __build_cells_regressors(self, start_layer, initial_block_id: int, n_filters: int,
+                                 dilation_rate: int):
         """ Builds the regressor task.
 
         This branch of the neural network is an addition to the original U-Net architecture. The main goal of this
@@ -174,28 +175,34 @@ class UNet:
         last_layer = start_layer
 
         block_id = initial_block_id + 1
-        last_layer = keras_layer.Conv2D(n_filters * (2 ** 3), (3, 3), dilation_rate=dilation_rate, activation='relu',
+        last_layer = keras_layer.Conv2D(n_filters * (2 ** 3), (3, 3), dilation_rate=dilation_rate,
+                                        activation='relu',
                                         padding='same',
-                                        kernel_initializer='he_normal', name=f"conv_{block_id}")(last_layer)
+                                        kernel_initializer='he_normal', name=f"conv_{block_id}")(
+            last_layer)
         layers.append(last_layer)
 
-        last_layer = keras_layer.Conv2D(n_filters * (2 ** 3), (3, 3), dilation_rate=dilation_rate, activation='relu',
+        last_layer = keras_layer.Conv2D(n_filters * (2 ** 3), (3, 3), dilation_rate=dilation_rate,
+                                        activation='relu',
                                         padding='same',
                                         kernel_initializer='he_normal',
                                         name=f"conv_{block_id}_{block_id}")(last_layer)
         layers.append(last_layer)
 
-        last_layer = keras_layer.MaxPooling2D(pool_size=(2, 2), data_format='channels_last', name=f"mp_{block_id}")(last_layer)
+        last_layer = keras_layer.MaxPooling2D(pool_size=(2, 2), data_format='channels_last',
+                                              name=f"mp_{block_id}")(last_layer)
         layers.append(last_layer)
 
         block_id = initial_block_id + 2
-        last_layer = keras_layer.Conv2D(n_filters * (2 ** 4), (3, 3), dilation_rate=dilation_rate, activation='relu',
+        last_layer = keras_layer.Conv2D(n_filters * (2 ** 4), (3, 3), dilation_rate=dilation_rate,
+                                        activation='relu',
                                         padding='same',
                                         kernel_initializer='he_normal',
                                         name=f"conv_{block_id}")(last_layer)
         layers.append(last_layer)
 
-        last_layer = keras_layer.Conv2D(n_filters * (2 ** 4), (3, 3), dilation_rate=dilation_rate, activation='relu',
+        last_layer = keras_layer.Conv2D(n_filters * (2 ** 4), (3, 3), dilation_rate=dilation_rate,
+                                        activation='relu',
                                         padding='same',
                                         kernel_initializer='he_normal',
                                         name=f"conv_{block_id}_{block_id}")(last_layer)
@@ -228,13 +235,15 @@ class UNet:
         """
         # Define input batch shape
         input_image = keras_layer.Input(self.__input_size, name="input_image")
-        encoder, last_block_id = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=n_blocks,
+        encoder, last_block_id = self.__build_encoder(n_filters=n_filters, start_layer=input_image,
+                                                      n_blocks=n_blocks,
                                                       dilation_rate=dilation_rate)
 
         if self.__build_regressor:
-            regressor, last_block_id = self.__build_cells_regressors(start_layer=list(encoder.values())[-1][-1],
-                                                                     initial_block_id=6,
-                                                                     n_filters=n_filters, dilation_rate=dilation_rate)
+            regressor, last_block_id = self.__build_cells_regressors(
+                start_layer=list(encoder.values())[-1][-1],
+                initial_block_id=6,
+                n_filters=n_filters, dilation_rate=dilation_rate)
 
         filters_size = [n_filters * (2 ** i) for i in range(0, n_blocks)]
         filters_size = filters_size[::-1]
@@ -248,8 +257,10 @@ class UNet:
         else:
             last_activation = "softmax"
 
-        conv10 = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation, padding='same',
-                                    dilation_rate=dilation_rate, kernel_initializer='he_normal', name="img_out")(
+        conv10 = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
+                                    padding='same',
+                                    dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                                    name="img_out")(
             list(decoder.values())[-1][-1])
 
         if not self.__build_rpn and self.__build_regressor:
@@ -268,12 +279,15 @@ class UNet:
             rpn_class_logits, rpn_class, rpn_bbox = rpn_output
 
             # RPN GT
-            input_rpn_match = keras_layer.Input(shape=[None, 1], name="input_rpn_match", dtype=tf.int32)
-            input_rpn_bbox = keras_layer.Input(shape=[None, 4], name="input_rpn_bbox", dtype=tf.float32)
+            input_rpn_match = keras_layer.Input(shape=[None, 1], name="input_rpn_match",
+                                                dtype=tf.int32)
+            input_rpn_bbox = keras_layer.Input(shape=[None, 4], name="input_rpn_bbox",
+                                               dtype=tf.float32)
 
             # RPN Loss
             rpn_class_loss = keras_layer.Lambda(lambda x: rpn_model.class_loss_graph(*x),
-                                                name="rpn_class_loss")([input_rpn_match, rpn_class_logits])
+                                                name="rpn_class_loss")(
+                [input_rpn_match, rpn_class_logits])
             rpn_bbox_loss = keras_layer.Lambda(lambda x: rpn_model.bbox_loss_graph(config, *x),
                                                name="rpn_bbox_loss")(
                 [input_rpn_bbox, input_rpn_match, rpn_bbox])
@@ -293,7 +307,8 @@ class UNet:
 
         self.__internal_model = model
 
-    def compile(self, loss_func: Union[str, Callable] = "categorical_crossentropy", check: bool = False):
+    def compile(self, loss_func: Union[str, Callable] = "categorical_crossentropy",
+                check: bool = False):
         """ Compiles the models.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
@@ -332,6 +347,8 @@ class UNet:
         """ Trains the model with the info passed as parameters.
 
         The keras model is trained with the information passed as parameters. The info is defined
+        on Config class or instead passed as parameters.
+
         Args:
             train_generator:
             val_generator:
@@ -347,21 +364,28 @@ class UNet:
         if self.__is_trained:
             warnings.warn("Model already trained, starting new training")
 
-        if callbacks is None:
-            callbacks = []
-
-        if check_point_path is not None:
-            callbacks.append(
-                tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
-                                                   save_weights_only=False, save_best_only=True))
-
-        if val_generator is not None:
-            self.__internal_model.fit(train_generator, validation_data=val_generator, epochs=epochs,
-                                      validation_steps=validation_steps, callbacks=callbacks,
-                                      steps_per_epoch=steps_per_epoch)
+        if self.__build_rpn:
+            self.__internal_model.fit(train_generator, epochs=epochs,
+                                      steps_per_epoch=self.__config.STEPS_PER_EPOCH,
+                                      callbacks=callbacks, validation_data=val_generator,
+                                      validation_steps=self.__config.VALIDATION_STEPS)
         else:
-            self.__internal_model.fit(train_generator, epochs=epochs, callbacks=callbacks,
-                                      steps_per_epoch=steps_per_epoch)
+            if callbacks is None:
+                callbacks = []
+
+            if check_point_path is not None:
+                callbacks.append(
+                    tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
+                                                       save_weights_only=False,
+                                                       save_best_only=True))
+
+            if val_generator is not None:
+                self.__internal_model.fit(train_generator, validation_data=val_generator,
+                                          epochs=epochs, validation_steps=validation_steps,
+                                          callbacks=callbacks, steps_per_epoch=steps_per_epoch)
+            else:
+                self.__internal_model.fit(train_generator, epochs=epochs, callbacks=callbacks,
+                                          steps_per_epoch=steps_per_epoch)
         self.__is_trained = True
 
     @property
