@@ -93,7 +93,6 @@ def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=
     References:
         `Wiki-Dice <https://en.wikipedia.org/wiki/Sørensen–Dice_coefficient>`
     """
-
     inse = tf.reduce_sum(output * target, axis=axis)
     if loss_type == 'jaccard':
         l = tf.reduce_sum(output * output, axis=axis)
@@ -271,7 +270,7 @@ class UNet:
 
         return layers, block_id
 
-    def build_unet(self, n_filters=16, dilation_rate: int = 1):
+    def build_unet(self, n_filters=16, dilation_rate: int = 1, n_blocks: int = 4):
         """ Builds the graph and model for the U-Net.
 
         The U-Net, first introduced by Ronnenberger et al., is an encoder-decoder architecture.
@@ -283,18 +282,20 @@ class UNet:
         """
         # Define input batch shape
         input_image = KL.Input(self.__input_size, name="input_image")
-        encoder = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=4,
+        encoder = self.__build_encoder(n_filters=n_filters, start_layer=input_image, n_blocks=n_blocks,
                                        dilation_rate=dilation_rate)
 
         if self.__build_regressor:
             regressor, last_block_id = self.__build_cells_regressors(start_layer=list(encoder.values())[-1][-1],
                                                                      initial_block_id=6,
                                                                      n_filters=n_filters, dilation_rate=dilation_rate)
-
+        
+        filters_size = [n_filters * (2 ** i) for i in range(0, n_blocks)]
+        filters_size = filters_size[::-1]
+        
         decoder = self.__build_decoder(encoder=encoder, dilation_rate=dilation_rate,
                                        initial_block_id=last_block_id + 1,
-                                       filters=[n_filters * 8, n_filters * 4, n_filters * 2,
-                                                n_filters * 1])
+                                       filters=filters_size)
 
         if self.__n_channels == 1:
             last_activation = "sigmoid"

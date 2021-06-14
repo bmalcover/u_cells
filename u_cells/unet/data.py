@@ -93,12 +93,12 @@ class DataGenerator(KU.Sequence):
             seed=seed
         )
 
+        self.__stadistic = []
         if do_regression is not None:
             self.__regression_data = self.__get_regions_info(do_regression, normalize_region_data)
         else:
             self.__regression_data = None
 
-        self.__stadistic = []
         self.__generator = self.__get_merged_info()
 
     def __get_regions_info(self, path: str, normalize: bool = False):
