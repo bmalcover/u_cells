@@ -146,7 +146,7 @@ class Config(ABC):
         """Display Configuration values."""
         res = "\nConfigurations:"
         for key, val in self.to_dict().items():
-            res += f"{key:30} {val}"
+            res += f"{key:30} {val} \n"
         res += "\n"
 
         return res
