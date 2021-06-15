@@ -13,8 +13,8 @@ import tensorflow.keras.layers as keras_layer
 from tensorflow.keras.optimizers import *
 import tensorflow as tf
 
-from u_cells.common import config
-from u_cells.rpn import model as rpn_model
+from u_cells.u_cells.common import config
+from u_cells.u_cells.rpn import model as rpn_model
 
 
 class UNet:
@@ -89,7 +89,7 @@ class UNet:
                 layers[dict_key].append(pool1)
 
                 prev_layer = pool1
-
+        
         return layers, block_id
 
     def __build_decoder(self, encoder, filters: List[int], name: str = "decode",
@@ -222,7 +222,7 @@ class UNet:
 
         return layers, block_id
 
-    def build_unet(self, n_filters=16, dilation_rate: int = 1, n_blocks: int = 4):
+    def build_unet(self, n_filters=16, dilation_rate: int = 1, n_blocks: int = 5):
         """ Builds the graph and model for the U-Net.
 
         The U-Net, first introduced by Ronnenberger et al., is an encoder-decoder architecture.
@@ -288,7 +288,7 @@ class UNet:
             rpn_class_loss = keras_layer.Lambda(lambda x: rpn_model.class_loss_graph(*x),
                                                 name="rpn_class_loss")(
                 [input_rpn_match, rpn_class_logits])
-            rpn_bbox_loss = keras_layer.Lambda(lambda x: rpn_model.bbox_loss_graph(config, *x),
+            rpn_bbox_loss = keras_layer.Lambda(lambda x: rpn_model.bbox_loss_graph(*x),
                                                name="rpn_bbox_loss")(
                 [input_rpn_bbox, input_rpn_match, rpn_bbox])
 
@@ -334,7 +334,7 @@ class UNet:
 
             for name in loss_names:
                 layer = self.__internal_model.get_layer(name)
-                if not check and layer.output in self.__internal_model.losses:
+                if check and layer.output in self.__internal_model.losses:
                     continue
                 loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
                 self.__internal_model.add_loss(loss)
