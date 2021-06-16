@@ -108,6 +108,10 @@ class Config(ABC):
     POOL_SIZE = 7
     MASK_POOL_SIZE = 14
 
+    # Maximum number of ground truth instances to use in one image
+    MAX_GT_INSTANCES = 100
+
+
     # Learning rate and momentum
     # The Mask RCNN paper uses lr=0.02, but on TensorFlow it causes weights to explode. Likely due
     # to differences in optimizer implementation. The original library used 0.9, we used U-Net value
