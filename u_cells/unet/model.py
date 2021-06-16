@@ -30,7 +30,7 @@ class UNet:
         self.__config = config_net
 
         self.__internal_model = None
-        self.__is_trained = False
+        self.__history = None
 
     def __build_encoder(self, n_filters: int, start_layer, n_blocks: int, name: str = "encode",
                         dilation_rate: int = 1, initial_block_id: int = 0):
@@ -89,7 +89,7 @@ class UNet:
                 layers[dict_key].append(pool1)
 
                 prev_layer = pool1
-        
+
         return layers, block_id
 
     def __build_decoder(self, encoder, filters: List[int], name: str = "decode",
@@ -361,14 +361,14 @@ class UNet:
         Returns:
 
         """
-        if self.__is_trained:
+        if self.__history is not None:
             warnings.warn("Model already trained, starting new training")
 
         if self.__build_rpn:
-            self.__internal_model.fit(train_generator, epochs=epochs,
-                                      steps_per_epoch=self.__config.STEPS_PER_EPOCH,
-                                      callbacks=callbacks, validation_data=val_generator,
-                                      validation_steps=self.__config.VALIDATION_STEPS)
+            history = self.__internal_model.fit(train_generator, epochs=epochs,
+                                                steps_per_epoch=self.__config.STEPS_PER_EPOCH,
+                                                callbacks=callbacks, validation_data=val_generator,
+                                                validation_steps=self.__config.VALIDATION_STEPS)
         else:
             if callbacks is None:
                 callbacks = []
@@ -380,13 +380,16 @@ class UNet:
                                                        save_best_only=True))
 
             if val_generator is not None:
-                self.__internal_model.fit(train_generator, validation_data=val_generator,
-                                          epochs=epochs, validation_steps=validation_steps,
-                                          callbacks=callbacks, steps_per_epoch=steps_per_epoch)
+                history = self.__internal_model.fit(train_generator, validation_data=val_generator,
+                                                    epochs=epochs,
+                                                    validation_steps=validation_steps,
+                                                    callbacks=callbacks,
+                                                    steps_per_epoch=steps_per_epoch)
             else:
-                self.__internal_model.fit(train_generator, epochs=epochs, callbacks=callbacks,
-                                          steps_per_epoch=steps_per_epoch)
-        self.__is_trained = True
+                history = self.__internal_model.fit(train_generator, epochs=epochs,
+                                                    callbacks=callbacks,
+                                                    steps_per_epoch=steps_per_epoch)
+        self.__history = history
 
     @property
     def model(self):

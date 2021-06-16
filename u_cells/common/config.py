@@ -144,7 +144,7 @@ class Config(ABC):
 
     def __str__(self):
         """Display Configuration values."""
-        res = "\nConfigurations:"
+        res = "Configurations:\n"
         for key, val in self.to_dict().items():
             res += f"{key:30} {val} \n"
         res += "\n"

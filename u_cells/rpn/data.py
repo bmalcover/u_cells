@@ -210,7 +210,8 @@ class DataGenerator(KU.Sequence):
 
         # Anchors
         # [anchor_count, (y1, x1, y2, x2)]
-        self.backbone_shapes = DataGenerator.__compute_backbone_shapes(config, config.IMAGE_SHAPE)
+        self.backbone_shapes = DataGenerator.__compute_backbone_shapes(config.IMAGE_SHAPE,
+                                                                       config.BACKBONE_STRIDES)
         self.anchors = DataGenerator.__generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
                                                                 config.RPN_ANCHOR_RATIOS,
                                                                 self.backbone_shapes,
@@ -548,9 +549,6 @@ class DataGenerator(KU.Sequence):
         source_class_ids = dataset.source_class_ids[dataset.image_info[image_id]["source"]]
         active_class_ids[source_class_ids] = 1
 
-        # Resize masks to smaller size to reduce memory usage
-        if config.USE_MINI_MASK:
-            mask = utils.minimize_mask(bbox, mask, config.MINI_MASK_SHAPE)
 
         # Image meta data
         image_meta = compose_image_meta(image_id, original_shape, image.shape,
