@@ -198,19 +198,20 @@ class DataGenerator(KU.Sequence):
         input_img = os.path.join(self.__base_path, filename)
         input_img = cv2.imread(input_img)
 
-        mask = np.ones([input_img.shape[0], input_img.shape[1], self.__output_size], dtype=np.int32)
+        mask = np.ones((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
 
         for idx_channel, (key, region) in enumerate(self.__region_data[filename].items()):
             # If there are more regions than channels breaks the loop
             if idx_channel == self.__output_size:
-
                 break
 
             region = region["shape_attributes"]
             rr, cc = skimage.draw.polygon(region['all_points_y'], region['all_points_x'])
-            mask[rr, cc, idx_channel] = 1
-
-        mask = mask.astype(np.float32)
+            channel_mask = np.zeros((input_img.shape[0], input_img.shape[1]))
+            channel_mask[rr, cc] = 1
+            channel_mask = cv2.resize(channel_mask, (self.__shape))
+            
+            mask[:, :, idx_channel] = channel_mask
 
         if self.__rgb:
             input_shape = (self.__shape[0], self.__shape[1], 3)
@@ -218,7 +219,6 @@ class DataGenerator(KU.Sequence):
             input_shape = self.__shape
 
         input_img = skimage.transform.resize(input_img, input_shape)
-        mask = skimage.transform.resize(mask, (self.__shape[0], self.__shape[1], mask.shape[2]))
 
         output = {"img_out": mask}
 
