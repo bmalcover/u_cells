@@ -303,7 +303,8 @@ class UNet:
                        rpn_class_loss,
                        rpn_bbox_loss]
 
-            model = keras_model.Model(inputs, outputs, name='r-unet')
+
+            model = keras_model.Model(inputs=inputs, outputs=outputs, name='r-unet')
 
         self.__internal_model = model
 
@@ -340,7 +341,7 @@ class UNet:
                 self.__internal_model.add_loss(loss)
 
             self.__internal_model.compile(optimizer=Adam(lr=self.__config.LEARNING_RATE),
-                                          loss=[loss_func, None, None, None, None, None])
+                                          loss=[loss_func, None, None])
 
     def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
               validation_steps: int, check_point_path: Union[str, None], callbacks=None):

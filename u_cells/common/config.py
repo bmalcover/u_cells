@@ -111,6 +111,8 @@ class Config(ABC):
     # Maximum number of ground truth instances to use in one image
     MAX_GT_INSTANCES = 100
 
+    # Bounding box refinement standard deviation for RPN and final detections.
+    RPN_BBOX_STD_DEV = np.array([0.1, 0.1, 0.2, 0.2])
 
     # Learning rate and momentum
     # The Mask RCNN paper uses lr=0.02, but on TensorFlow it causes weights to explode. Likely due

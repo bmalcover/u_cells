@@ -157,7 +157,8 @@ class DataGenerator(KU.Sequence):
                 mask = new_mask
 
             mask = mask / 255
-
+            output = {"img_out": mask}
+            
             if self.__regression_data is not None:
                 idx = (self.__image_generator.batch_index - 1) * self.__image_generator.batch_size
                 batch_filenames = self.__image_generator.filenames[idx: idx + self.__image_generator.batch_size]
@@ -169,8 +170,10 @@ class DataGenerator(KU.Sequence):
                     n_cells.append(len(list(self.__regression_data)[int(region_key)]))
 
                 n_cells = np.array(n_cells)
-
-                yield img, {"img_out": mask, 'regressor_output': n_cells}
+               
+                output['regressor_output'] = n_cells
+                
+            yield img, output
 
     @property
     def mean(self) -> Union[int, float]:

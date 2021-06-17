@@ -9,7 +9,7 @@ import imgaug
 
 from tensorflow.keras import utils as KU
 
-from u_cells.rpn import utils
+from u_cells.u_cells.rpn import utils
 
 
 class Dataset(ABC):
@@ -202,8 +202,9 @@ class DataGenerator(KU.Sequence):
             and masks.
         """
 
-    def __init__(self, dataset, config, shuffle=True, augmentation=None, detection_targets=False):
-
+    def __init__(self, steps: int, dataset, config, shuffle=True, augmentation=None, detection_targets=False, ):
+        
+        self.__steps = steps
         self.image_ids = np.copy(dataset.image_ids)
         self.dataset = dataset
         self.config = config
@@ -224,7 +225,7 @@ class DataGenerator(KU.Sequence):
         self.detection_targets = detection_targets
 
     def __len__(self):
-        return int(np.ceil(len(self.image_ids) / float(self.batch_size)))
+        return self.__steps
 
     def __getitem__(self, idx):
         b = 0
@@ -261,16 +262,26 @@ class DataGenerator(KU.Sequence):
                     dtype=rpn_bbox.dtype)
                 batch_images = np.zeros(
                     (self.batch_size,) + image.shape, dtype=np.float32)
-
+                batch_gt_masks = np.zeros(
+                    (self.batch_size, gt_masks.shape[0], gt_masks.shape[1],
+                     self.config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
+            
+                        # If more instances than fits in the array, sub-sample from them.
+            if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
+                ids = np.random.choice(
+                    np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
+                gt_masks = gt_masks[:, :, ids]
 
             # Add to batch
             batch_rpn_match[b] = rpn_match[:, np.newaxis]
             batch_rpn_bbox[b] = rpn_bbox
             batch_images[b] = self.mold_image(image.astype(np.float32))
+            batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
             b += 1
 
         inputs = [batch_images, batch_rpn_match, batch_rpn_bbox]
-        outputs = []
+#         inputs = [batch_images]
+        outputs = [batch_gt_masks]
 
         return inputs, outputs
 
