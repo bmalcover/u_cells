@@ -5,6 +5,7 @@ import os
 
 import skimage
 from skimage import draw
+from skimage import transform
 import cv2
 import numpy as np
 
@@ -63,12 +64,15 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
 
 class DataGenerator(KU.Sequence):
 
-    def __init__(self, steps: int, path: str, region_path: str, multi_type: bool = False,
-                 regression: bool = False):
+    def __init__(self, steps: int, path: str, region_path: str, shape, max_output: int,
+                 multi_type: bool = False, regression: bool = False, rgb_input: bool = True):
         self.__steps = steps
         self.__base_path = path
         self.__multi_type = multi_type
         self.__regression = regression
+        self.__shape = shape
+        self.__rgb = rgb_input
+        self.__output_size = max_output
         # self.__decode_mode = dcd_mode
 
         # image_datagen = ImageDataGenerator(**aug_dict)
@@ -194,12 +198,27 @@ class DataGenerator(KU.Sequence):
         input_img = os.path.join(self.__base_path, filename)
         input_img = cv2.imread(input_img)
 
-        mask = np.ones([input_img.shape[0], input_img.shape[1], 100], dtype=np.int32)
+        mask = np.ones([input_img.shape[0], input_img.shape[1], self.__output_size], dtype=np.int32)
 
         for idx_channel, (key, region) in enumerate(self.__region_data[filename].items()):
+            # If there are more regions than channels breaks the loop
+            if idx_channel == self.__output_size:
+
+                break
+
             region = region["shape_attributes"]
             rr, cc = skimage.draw.polygon(region['all_points_y'], region['all_points_x'])
             mask[rr, cc, idx_channel] = 1
+
+        mask = mask.astype(np.float32)
+
+        if self.__rgb:
+            input_shape = (self.__shape[0], self.__shape[1], 3)
+        else:
+            input_shape = self.__shape
+
+        input_img = skimage.transform.resize(input_img, input_shape)
+        mask = skimage.transform.resize(mask, (self.__shape[0], self.__shape[1], mask.shape[2]))
 
         output = {"img_out": mask}
 
