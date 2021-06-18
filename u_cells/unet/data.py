@@ -64,7 +64,7 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
 
 class DataGenerator(KU.Sequence):
 
-    def __init__(self, steps: int, path: str, region_path: str, shape, max_output: int,
+    def __init__(self, steps: int, path: str, region_path: str, shape, max_output: int, batch_size:int = 1,
                  multi_type: bool = False, regression: bool = False, rgb_input: bool = True):
         self.__steps = steps
         self.__base_path = path
@@ -73,6 +73,7 @@ class DataGenerator(KU.Sequence):
         self.__shape = shape
         self.__rgb = rgb_input
         self.__output_size = max_output
+        self.__batch_size = batch_size
         # self.__decode_mode = dcd_mode
 
         # image_datagen = ImageDataGenerator(**aug_dict)
@@ -199,26 +200,27 @@ class DataGenerator(KU.Sequence):
         input_img = cv2.imread(input_img)
 
         mask = np.ones((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
-
-        for idx_channel, (key, region) in enumerate(self.__region_data[filename].items()):
-            # If there are more regions than channels breaks the loop
-            if idx_channel == self.__output_size:
-                break
+        
+        idx_channel = 0
+        while (idx_channel < self.__output_size) and (idx_channel < len(list(self.__region_data[filename].items()))):
+            key, region = list(self.__region_data[filename].items())[idx_channel]
 
             region = region["shape_attributes"]
             rr, cc = skimage.draw.polygon(region['all_points_y'], region['all_points_x'])
             channel_mask = np.zeros((input_img.shape[0], input_img.shape[1]))
             channel_mask[rr, cc] = 1
             channel_mask = cv2.resize(channel_mask, (self.__shape))
-            
-            mask[:, :, idx_channel] = channel_mask
 
+            mask[:, :, idx_channel] = channel_mask
+            idx_channel += 1
+        
+        mask = mask.reshape(self.__batch_size, self.__shape[0], self.__shape[1], self.__output_size)
         if self.__rgb:
             input_shape = (self.__shape[0], self.__shape[1], 3)
         else:
             input_shape = self.__shape
 
-        input_img = skimage.transform.resize(input_img, input_shape)
+        input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__batch_size, self.__shape[0], self.__shape[1], 3)
 
         output = {"img_out": mask}
 
