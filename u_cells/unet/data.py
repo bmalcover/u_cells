@@ -8,6 +8,7 @@ from skimage import draw
 from skimage import transform
 import cv2
 import numpy as np
+import imgaug.augmenters as iaa
 
 from tensorflow.keras import utils as KU
 
@@ -64,8 +65,8 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
 
 class DataGenerator(KU.Sequence):
 
-    def __init__(self, steps: int, path: str, region_path: str, shape, max_output: int, batch_size:int = 1,
-                 multi_type: bool = False, regression: bool = False, rgb_input: bool = True):
+    def __init__(self, batch_size: int, steps: int, path: str, region_path: str, shape, max_output: int,
+                 multi_type: bool = False, regression: bool = False, rgb_input: bool = True, augmentation = None):
         self.__steps = steps
         self.__base_path = path
         self.__multi_type = multi_type
@@ -74,41 +75,11 @@ class DataGenerator(KU.Sequence):
         self.__rgb = rgb_input
         self.__output_size = max_output
         self.__batch_size = batch_size
-        # self.__decode_mode = dcd_mode
 
-        # image_datagen = ImageDataGenerator(**aug_dict)
-        # mask_datagen = ImageDataGenerator(**aug_dict)
-        #
-        # self.__image_generator = image_datagen.flow_from_directory(
-        #     path,
-        #     classes=[image_folder],
-        #     class_mode=None,
-        #     color_mode=img_color_mode,
-        #     target_size=target_size,
-        #     batch_size=batch_size,
-        #     seed=seed
-        # )
-        #
-        # self.__mask_generator = mask_datagen.flow_from_directory(
-        #     path,
-        #     classes=[mask_folder],
-        #     class_mode=None,
-        #     color_mode=mask_color_mode,
-        #     target_size=target_size,
-        #     batch_size=batch_size,
-        #     seed=seed
-        # )
+        self.__augmentation = iaa.Sequential(augmentation)
 
-        self.__stadistic = []
         self.__region_data = self.__get_regions_info(region_path)
         self.__keys = list(self.__region_data.keys())
-
-        # if do_regression is not None:
-        #     self.__regression_data = self.__get_regions_info(do_regression, normalize_region_data)
-        # else:
-        #     self.__regression_data = None
-        #
-        # self.__generator = self.__get_merged_info()
 
     def __get_regions_info(self, path: str):
         """ Gets the information of the regions.
@@ -116,8 +87,6 @@ class DataGenerator(KU.Sequence):
         The information is stored with VIA 2.0 format. The regions are saved as a dictionary for
         each image, the key is "regions". This key is a list of regions. On the other hand we also
         are interest in the type of each region, this type is defined as an integer.
-
-        TODO: Add the ability to return also the region depending on a parameter
 
         Args:
             path (str): String containing the information of the regions.
@@ -131,100 +100,70 @@ class DataGenerator(KU.Sequence):
 
         return info
 
-    # def __get_merged_info(self):
-    #     """ Yields the information from the dataset.
-    #
-    #     Returns:
-    #
-    #     """
-    #     for img, mask in zip(self.__image_generator, self.__mask_generator):
-    #         img = img / 255
-    #
-    #         if self.__decode_mode is not None:
-    #             if self.__decode_mode is DecodeMode.CELLS:
-    #                 new_mask = np.zeros((mask.shape[0], mask.shape[1], mask.shape[2]))
-    #
-    #                 for m_idx in range(0, mask.shape[0]):
-    #                     m = mask[m_idx, :, :]
-    #                     new_mask[m_idx, :, :] = decode(m, self.__decode_mode)
-    #             else:
-    #                 new_mask = np.zeros(
-    #                     (mask.shape[0], mask.shape[1], mask.shape[2], self.__decode_mode.value))
-    #
-    #                 for m_idx in range(0, mask.shape[0]):
-    #                     m = mask[m_idx, :, :, :]
-    #                     new_mask[m_idx, :, :, :] = decode(m, self.__decode_mode)
-    #             mask = new_mask
-    #
-    #         mask = mask / 255
-    #         output = {"img_out": mask}
-    #
-    #         if self.__regression_data is not None:
-    #             idx = (self.__image_generator.batch_index - 1) * self.__image_generator.batch_size
-    #             batch_filenames = self.__image_generator.filenames[
-    #                               idx: idx + self.__image_generator.batch_size]
-    #
-    #             n_cells = []
-    #             for filename in batch_filenames:
-    #                 region_key = os.path.split(filename)[-1].split(".")[0]
-    #
-    #                 n_cells.append(len(list(self.__regression_data)[int(region_key)]))
-    #
-    #             n_cells = np.array(n_cells)
-    #
-    #             output['regressor_output'] = n_cells
-    #
-    #         yield img, output
+    def __draw_polygon(self, polygon, shape):
+        rr, cc = skimage.draw.polygon(polygon[:, 1], polygon[:, 0])
+        channel_mask = np.zeros(shape)
+        channel_mask[rr, cc] = 1
+        channel_mask = cv2.resize(channel_mask, self.__shape)
 
-    # @property
-    # def mean(self) -> Union[int, float]:
-    #     assert len(self.__stadistic) == 2
-    #
-    #     return self.__stadistic[0]
-    #
-    # @property
-    # def std(self) -> Union[int, float]:
-    #     assert len(self.__stadistic) == 2
-    #
-    #     return self.__stadistic[1]
+        return channel_mask
 
     def __len__(self):
         return self.__steps
 
     def __getitem__(self, idx):
-        idx = idx % len(self.__keys)
+        """ Returns a batch to train.
 
-        filename = self.__keys[idx]
+        Args:
+            idx:
 
-        input_img = os.path.join(self.__base_path, filename)
-        input_img = cv2.imread(input_img)
+        Returns:
 
-        mask = np.ones((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
-        
-        idx_channel = 0
-        while (idx_channel < self.__output_size) and (idx_channel < len(list(self.__region_data[filename].items()))):
-            key, region = list(self.__region_data[filename].items())[idx_channel]
+        """
+        input_batch = []
+        output_batch = []
 
-            region = region["shape_attributes"]
-            rr, cc = skimage.draw.polygon(region['all_points_y'], region['all_points_x'])
-            channel_mask = np.zeros((input_img.shape[0], input_img.shape[1]))
-            channel_mask[rr, cc] = 1
-            channel_mask = cv2.resize(channel_mask, (self.__shape))
+        for n_batch in range(0, self.__batch_size):
+            idx = (idx + n_batch) % len(self.__keys)
 
-            mask[:, :, idx_channel] = channel_mask
-            idx_channel += 1
-        
-        mask = mask.reshape(self.__batch_size, self.__shape[0], self.__shape[1], self.__output_size)
-        if self.__rgb:
-            input_shape = (self.__shape[0], self.__shape[1], 3)
-        else:
-            input_shape = self.__shape
+            filename = self.__keys[idx]
 
-        input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__batch_size, self.__shape[0], self.__shape[1], 3)
+            input_img = os.path.join(self.__base_path, filename)
+            input_img = cv2.imread(input_img)
 
-        output = {"img_out": mask}
+            mask = np.ones((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
 
-        if self.__regression:
-            output['regressor_output'] = len(self.__region_data[filename].values())
+            for idx_channel, (key, region) in list(self.__region_data[filename].items()):
+                if idx_channel == self.__output_size:
+                    break
 
-        return input_img, mask
+                region = region["shape_attributes"]
+                region_points = np.column_stack((region['all_points_x'], region['all_points_y']))
+
+                if self.__augmentation is not None:
+                    img_aug, points_aug = self.__augmentation(images=[input_img], keypoints=[region_points])
+                    input_img, region_points = img_aug[0], points_aug[0]
+
+                channel_mask = self.__draw_polygon(region_points, (input_img.shape[0], input_img.shape[1]))
+
+                mask[:, :, idx_channel] = channel_mask
+                idx_channel += 1
+
+            mask = mask.reshape((self.__batch_size, self.__shape[0], self.__shape[1], self.__output_size))
+            if self.__rgb:
+                input_shape = (self.__shape[0], self.__shape[1], 3)
+            else:
+                input_shape = self.__shape
+
+            input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__batch_size, self.__shape[0],
+                                                                                 self.__shape[1], 3)
+
+            output = {"img_out": mask}
+
+            if self.__regression:
+                output['regressor_output'] = len(self.__region_data[filename].values())
+
+            input_batch.append(input_img)
+            output_batch.append(output)
+
+        return input_batch, output_batch
