@@ -103,6 +103,10 @@ class DataGenerator(KU.Sequence):
     def __draw_polygon(self, polygon, shape):
         rr, cc = skimage.draw.polygon(polygon[:, 1], polygon[:, 0])
         channel_mask = np.zeros(shape)
+        
+        rr[rr >= shape[0]] = shape[0] - 1
+        cc[cc >= shape[1]] = shape[1] - 1
+        
         channel_mask[rr, cc] = 1
         channel_mask = cv2.resize(channel_mask, self.__shape)
 
@@ -121,7 +125,8 @@ class DataGenerator(KU.Sequence):
 
         """
         input_batch = []
-        output_batch = []
+        masks = []
+        regressors = []
 
         for n_batch in range(0, self.__batch_size):
             idx = (idx + n_batch) % len(self.__keys)
@@ -133,7 +138,7 @@ class DataGenerator(KU.Sequence):
 
             mask = np.ones((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
 
-            for idx_channel, (key, region) in list(self.__region_data[filename].items()):
+            for idx_channel, (key, region) in enumerate(list(self.__region_data[filename].items())):
                 if idx_channel == self.__output_size:
                     break
 
@@ -149,21 +154,25 @@ class DataGenerator(KU.Sequence):
                 mask[:, :, idx_channel] = channel_mask
                 idx_channel += 1
 
-            mask = mask.reshape((self.__batch_size, self.__shape[0], self.__shape[1], self.__output_size))
+            mask = mask.reshape((self.__shape[0], self.__shape[1], self.__output_size))
             if self.__rgb:
                 input_shape = (self.__shape[0], self.__shape[1], 3)
             else:
                 input_shape = self.__shape
 
-            input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__batch_size, self.__shape[0],
-                                                                                 self.__shape[1], 3)
-
-            output = {"img_out": mask}
-
-            if self.__regression:
-                output['regressor_output'] = len(self.__region_data[filename].values())
+            input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__shape[0],                              self.__shape[1], 3)
+            
+            masks.append(mask)
+            regressors.append(len(self.__region_data[filename].values()))
 
             input_batch.append(input_img)
-            output_batch.append(output)
-
-        return input_batch, output_batch
+            
+        input_batch = np.array(input_batch)
+        masks = np.array(masks)
+        regressors = np.array(regressors)
+        
+        output = {"img_out": mask}
+        if self.__regression:
+            output['regressor_output'] = len(self.__region_data[filename].values())
+        
+        return input_batch, output
