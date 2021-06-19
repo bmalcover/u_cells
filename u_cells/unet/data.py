@@ -66,7 +66,7 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
 class DataGenerator(KU.Sequence):
 
     def __init__(self, batch_size: int, steps: int, path: str, region_path: str, shape, max_output: int,
-                 multi_type: bool = False, regression: bool = False, rgb_input: bool = True, augmentation = None):
+                 multi_type: bool = False, regression: bool = False, rgb_input: bool = True, augmentation=None):
         self.__steps = steps
         self.__base_path = path
         self.__multi_type = multi_type
@@ -103,10 +103,10 @@ class DataGenerator(KU.Sequence):
     def __draw_polygon(self, polygon, shape):
         rr, cc = skimage.draw.polygon(polygon[:, 1], polygon[:, 0])
         channel_mask = np.zeros(shape)
-        
+
         rr[rr >= shape[0]] = shape[0] - 1
         cc[cc >= shape[1]] = shape[1] - 1
-        
+
         channel_mask[rr, cc] = 1
         channel_mask = cv2.resize(channel_mask, self.__shape)
 
@@ -138,16 +138,29 @@ class DataGenerator(KU.Sequence):
 
             mask = np.ones((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
 
+            h_points = []
+            v_points = []
+            for region in self.__region_data[filename].values():
+                region = region["shape_attributes"]
+
+                h_points += region['all_points_x']
+                v_points += region['all_points_y']
+
+            points = np.column_stack((h_points, v_points))
+
+            if self.__augmentation is not None:
+                img_aug, points_aug = self.__augmentation(images=[input_img], keypoints=[points])
+                input_img, points = img_aug[0], points_aug[0]
+
+            n_regions_points = 0
             for idx_channel, (key, region) in enumerate(list(self.__region_data[filename].items())):
                 if idx_channel == self.__output_size:
                     break
 
                 region = region["shape_attributes"]
-                region_points = np.column_stack((region['all_points_x'], region['all_points_y']))
+                region_points = points[n_regions_points:n_regions_points + len(region['all_points_y'])]
 
-                if self.__augmentation is not None:
-                    img_aug, points_aug = self.__augmentation(images=[input_img], keypoints=[region_points])
-                    input_img, region_points = img_aug[0], points_aug[0]
+                n_regions_points = n_regions_points + len(region['all_points_y'])
 
                 channel_mask = self.__draw_polygon(region_points, (input_img.shape[0], input_img.shape[1]))
 
@@ -160,19 +173,19 @@ class DataGenerator(KU.Sequence):
             else:
                 input_shape = self.__shape
 
-            input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__shape[0],                              self.__shape[1], 3)
-            
+            input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__shape[0], self.__shape[1], 3)
+
             masks.append(mask)
             regressors.append(len(self.__region_data[filename].values()))
 
             input_batch.append(input_img)
-            
+
         input_batch = np.array(input_batch)
         masks = np.array(masks)
         regressors = np.array(regressors)
-        
+
         output = {"img_out": masks}
         if self.__regression:
-            output['regressor_output'] = len(self.__region_data[filename].values())
-        
+            output['regressor_output'] = regressors
+
         return input_batch, output
