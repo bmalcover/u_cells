@@ -344,7 +344,7 @@ class UNet:
                                           loss=[loss_func, None, None])
 
     def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
-              validation_steps: int, check_point_path: Union[str, None], callbacks=None):
+              validation_steps: int, check_point_path: Union[str, None], callbacks=None, verbose=1):
         """ Trains the model with the info passed as parameters.
 
         The keras model is trained with the information passed as parameters. The info is defined
@@ -367,6 +367,7 @@ class UNet:
 
         if self.__build_rpn:
             history = self.__internal_model.fit(train_generator, epochs=epochs,
+                                                verbose=verbose,
                                                 steps_per_epoch=self.__config.STEPS_PER_EPOCH,
                                                 callbacks=callbacks, validation_data=val_generator,
                                                 validation_steps=self.__config.VALIDATION_STEPS)
@@ -385,10 +386,11 @@ class UNet:
                                                     epochs=epochs,
                                                     validation_steps=validation_steps,
                                                     callbacks=callbacks,
-                                                    steps_per_epoch=steps_per_epoch)
+                                                    steps_per_epoch=steps_per_epoch,
+                                                    verbose=verbose)
             else:
                 history = self.__internal_model.fit(train_generator, epochs=epochs,
-                                                    callbacks=callbacks,
+                                                    callbacks=callbacks, verbose=verbose,
                                                     steps_per_epoch=steps_per_epoch)
         self.__history = history
 

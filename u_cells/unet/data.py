@@ -171,7 +171,7 @@ class DataGenerator(KU.Sequence):
         masks = np.array(masks)
         regressors = np.array(regressors)
         
-        output = {"img_out": mask}
+        output = {"img_out": masks}
         if self.__regression:
             output['regressor_output'] = len(self.__region_data[filename].values())
         
