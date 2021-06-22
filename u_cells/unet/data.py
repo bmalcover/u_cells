@@ -136,7 +136,7 @@ class DataGenerator(KU.Sequence):
             input_img = os.path.join(self.__base_path, filename)
             input_img = cv2.imread(input_img)
 
-            mask = np.ones((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
+            mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
 
             h_points = []
             v_points = []

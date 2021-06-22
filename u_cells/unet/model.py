@@ -127,26 +127,32 @@ class UNet:
 
             layers[dict_key] = []
 
-            up5 = keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}")(prev_layer)
             if time_distributed:
-                up5 = keras_layer.TimeDistributed(up5)
+                up5 = keras_layer.TimeDistributed(keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}"))(prev_layer)
+                conv5 = keras_layer.TimeDistributed(Conv2D(filter_per_layer, (2, 2), activation='relu',
+                                           padding='same',
+                                           dilation_rate=dilation_rate,
+                                           kernel_initializer='he_normal',
+                                           name=f"conv_{block_id}"))(up5)
+            else:
+                up5 = keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}")(prev_layer)
+                conv5 = keras_layer.Conv2D(filter_per_layer, (2, 2), activation='relu',
+                                           padding='same',
+                                           dilation_rate=dilation_rate,
+                                           kernel_initializer='he_normal',
+                                           name=f"conv_{block_id}")(up5)
 
-            conv5 = keras_layer.Conv2D(filter_per_layer, (2, 2), activation='relu',
-                                       padding='same',
-                                       dilation_rate=dilation_rate,
-                                       kernel_initializer='he_normal',
-                                       name=f"conv_{block_id}")(up5)
-
-            conv5 = keras_layer.TimeDistributed(conv5)
             up6 = keras_layer.concatenate([conv5, enc_layer[-2]], name=f"conct_{block_id}", axis=3)
             layers[dict_key].append(up6)
 
-            conv6 = keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
-                                       dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                       name=f"conv_{block_id}_{block_id}")(up6)
+
 
             if time_distributed:
-                conv6 = keras_layer.TimeDistributed(conv6)
+                conv6 = keras_layer.TimeDistributed(keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same', dilation_rate=dilation_rate, kernel_initializer='he_normal',                                name=f"conv_{block_id}_{block_id}"))(up6)
+            else:
+                conv6 = keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
+                                           dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                                           name=f"conv_{block_id}_{block_id}")(up6)
 
             layers[dict_key].append(conv6)
 
@@ -272,7 +278,7 @@ class UNet:
             for bloc in encoder.values():
                 inputs_decoder.append(bloc[-1])
 
-            input_decoder = keras_layer.Concatenate(inputs_decoder)
+            input_decoder = keras_layer.concatenate(inputs_decoder)
         else:
             input_decoder = list(encoder.values())[-1][-1]
 
