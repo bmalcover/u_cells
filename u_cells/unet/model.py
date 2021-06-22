@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """ Module containing all functions to build the U-Net model.
 
-This module contains the set of functions that defines the original U-Net networks. This network was proposed by
-Ronnenberger et al. and is based on a Encoder-Decoder architecture.
+This module contains the set of functions that defines the original U-Net networks. This network was
+proposed by Ronnenberger et al. and is based on a Encoder-Decoder architecture.
 """
 
 from typing import Callable, Union, Tuple, List
@@ -50,9 +50,9 @@ class UNet:
             initial_block_id:
 
         Returns:
-            encoder (dict): Dictionary containing the layers that defines the model. Each key-value is a different
-                            block of the encoder. Each value is a list containing all the layers (in order) of that
-                            block.
+            encoder (dict): Dictionary containing the layers that defines the model. Each key-value
+                            is a different block of the encoder. Each value is a list containing all
+                            the layers (in order) of that block.
             block_id (int): Last id used to define a name of a layer.
         """
         bn: bool = self.__batch_normalization
@@ -128,12 +128,12 @@ class UNet:
             layers[dict_key] = []
 
             if time_distributed:
-                up5 = keras_layer.TimeDistributed(keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}"))(prev_layer)
-                conv5 = keras_layer.TimeDistributed(Conv2D(filter_per_layer, (2, 2), activation='relu',
-                                           padding='same',
-                                           dilation_rate=dilation_rate,
-                                           kernel_initializer='he_normal',
-                                           name=f"conv_{block_id}"))(up5)
+                up5 = keras_layer.TimeDistributed(
+                    keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}"))(prev_layer)
+                conv5 = keras_layer.TimeDistributed(
+                    keras_layer.Conv2D(filter_per_layer, (2, 2), activation='relu', padding='same',
+                                       dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                                       name=f"conv_{block_id}"))(up5)
             else:
                 up5 = keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}")(prev_layer)
                 conv5 = keras_layer.Conv2D(filter_per_layer, (2, 2), activation='relu',
@@ -145,13 +145,15 @@ class UNet:
             up6 = keras_layer.concatenate([conv5, enc_layer[-2]], name=f"conct_{block_id}", axis=3)
             layers[dict_key].append(up6)
 
-
-
             if time_distributed:
-                conv6 = keras_layer.TimeDistributed(keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same', dilation_rate=dilation_rate, kernel_initializer='he_normal',                                name=f"conv_{block_id}_{block_id}"))(up6)
+                conv6 = keras_layer.TimeDistributed(
+                    keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
+                                       dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                                       name=f"conv_{block_id}_{block_id}"))(up6)
             else:
-                conv6 = keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
-                                           dilation_rate=dilation_rate, kernel_initializer='he_normal',
+                conv6 = keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu',
+                                           padding='same', dilation_rate=dilation_rate,
+                                           kernel_initializer='he_normal',
                                            name=f"conv_{block_id}_{block_id}")(up6)
 
             layers[dict_key].append(conv6)
