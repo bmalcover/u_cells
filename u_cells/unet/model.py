@@ -20,14 +20,16 @@ from u_cells.u_cells.rpn import model as rpn_model
 class UNet:
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]], out_channel: int,
                  batch_normalization: bool, config_net: config.Config = None, rpn: bool = False,
-                 regressor: bool = False):
+                 regressor: bool = False, time_distributed: bool = False):
 
         self.__input_size: Tuple[int, int, int] = input_size
         self.__batch_normalization: bool = batch_normalization
-        self.__build_rpn: bool = rpn
-        self.__build_regressor: bool = regressor
         self.__n_channels: int = out_channel
         self.__config = config_net
+
+        self.__build_rpn: bool = rpn
+        self.__build_regressor: bool = regressor
+        self.__time_distributed: bool = time_distributed
 
         self.__internal_model = None
         self.__history = None
@@ -92,8 +94,9 @@ class UNet:
 
         return layers, block_id
 
-    def __build_decoder(self, encoder, filters: List[int], name: str = "decode",
-                        dilation_rate: int = 1, initial_block_id: int = 0):
+    def __build_decoder(self, encoder, filters: List[int], input_layer, name: str = "decode",
+                        dilation_rate: int = 1, initial_block_id: int = 0,
+                        time_distributed: bool = False):
         """ Build the decoder model.
 
         The decoder model of the U-Net is build upon the conjunction of UpSampling layers with
@@ -114,7 +117,7 @@ class UNet:
         bn: bool = self.__batch_normalization
 
         layers = {}
-        prev_layer = list(encoder.values())[-1][-1]
+        prev_layer = input_layer
 
         encoder_layers = list(encoder.values())[:-1]
         encoder_layers = encoder_layers[::-1]
@@ -124,17 +127,27 @@ class UNet:
 
             layers[dict_key] = []
 
-            up6 = keras_layer.concatenate(
-                [keras_layer.Conv2D(filter_per_layer, (2, 2), activation='relu', padding='same',
-                                    dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                    name=f"conv_{block_id}")(
-                    keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}")(prev_layer)),
-                    enc_layer[-2]], name=f"conct_{block_id}", axis=3)
+            up5 = keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}")(prev_layer)
+            if time_distributed:
+                up5 = keras_layer.TimeDistributed(up5)
+
+            conv5 = keras_layer.Conv2D(filter_per_layer, (2, 2), activation='relu',
+                                       padding='same',
+                                       dilation_rate=dilation_rate,
+                                       kernel_initializer='he_normal',
+                                       name=f"conv_{block_id}")(up5)
+
+            conv5 = keras_layer.TimeDistributed(conv5)
+            up6 = keras_layer.concatenate([conv5, enc_layer[-2]], name=f"conct_{block_id}", axis=3)
             layers[dict_key].append(up6)
 
             conv6 = keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
                                        dilation_rate=dilation_rate, kernel_initializer='he_normal',
                                        name=f"conv_{block_id}_{block_id}")(up6)
+
+            if time_distributed:
+                conv6 = keras_layer.TimeDistributed(conv6)
+
             layers[dict_key].append(conv6)
 
             if bn:
@@ -144,12 +157,17 @@ class UNet:
             conv6 = keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
                                        dilation_rate=dilation_rate, kernel_initializer='he_normal',
                                        name=f"conv_{block_id}_{block_id}_{block_id}")(conv6)
+
+            if time_distributed:
+                conv6 = keras_layer.TimeDistributed(conv6)
             layers[dict_key].append(conv6)
 
             if bn:
                 conv6 = keras_layer.BatchNormalization(name=f"bn_conv_{block_id}_{block_id}")(conv6)
                 layers[dict_key].append(conv6)
 
+            if time_distributed:
+                conv6 = keras_layer.TimeDistributed(conv6)
             prev_layer = conv6
 
         return layers
@@ -158,9 +176,9 @@ class UNet:
                                  dilation_rate: int):
         """ Builds the regressor task.
 
-        This branch of the neural network is an addition to the original U-Net architecture. The main goal of this
-        branch is to obtain the number of cells on an image. To do so is based on the regression principles, using
-        special kind of loss function to do it.
+        This branch of the neural network is an addition to the original U-Net architecture. The
+        main goal of this branch is to obtain the number of cells on an image. To do so is based on
+        the regression principles, using  special kind of loss function to do it.
 
         Args:
             start_layer:
@@ -248,9 +266,19 @@ class UNet:
         filters_size = [n_filters * (2 ** i) for i in range(0, n_blocks)]
         filters_size = filters_size[::-1]
 
+        if self.__time_distributed:
+            inputs_decoder = []
+
+            for bloc in encoder.values():
+                inputs_decoder.append(bloc[-1])
+
+            input_decoder = keras_layer.Concatenate(inputs_decoder)
+        else:
+            input_decoder = list(encoder.values())[-1][-1]
+
         decoder = self.__build_decoder(encoder=encoder, dilation_rate=dilation_rate,
-                                       initial_block_id=last_block_id + 1,
-                                       filters=filters_size)
+                                       filters=filters_size, initial_block_id=last_block_id + 1,
+                                       input_layer=input_decoder)
 
         if self.__n_channels == 1:
             last_activation = "sigmoid"
@@ -302,7 +330,6 @@ class UNet:
                        rpn_bbox,
                        rpn_class_loss,
                        rpn_bbox_loss]
-
 
             model = keras_model.Model(inputs=inputs, outputs=outputs, name='r-unet')
 
