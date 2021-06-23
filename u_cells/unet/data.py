@@ -5,11 +5,12 @@ import json
 import os
 import glob
 
+import cv2
+import tqdm
 import skimage
+import numpy as np
 from skimage import draw
 from skimage import transform
-import cv2
-import numpy as np
 import imgaug.augmenters as iaa
 
 from tensorflow.keras import utils as KU
@@ -91,7 +92,7 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
 
     augmentation = iaa.Sequential(augmentation)
 
-    for idx in range(images_to_generate):
+    for idx in tqdm.tqdm(range(images_to_generate)):
         filename = random.choice(filenames)
         _, name = os.path.split(filename)
 
