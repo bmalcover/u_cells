@@ -91,20 +91,43 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
     region_out = {}
 
     augmentation = iaa.Sequential(augmentation)
+    os.makedirs(output_folder, exist_ok = True)
 
     for idx in tqdm.tqdm(range(images_to_generate)):
+        region_out[str(idx) + ".png"] = {"regions": {}}
         filename = random.choice(filenames)
         _, name = os.path.split(filename)
 
         img = cv2.imread(filename)
-        points = region_info[name]
+        
+        h_points = []
+        v_points = []
+        for region in region_info[name].values():
+            region = region["shape_attributes"]
 
+            h_points += region['all_points_x']
+            v_points += region['all_points_y']
+
+        points = np.column_stack((h_points, v_points))
+        
         img_aug, points_aug = augmentation(images=[img], keypoints=[points])
+        
+        last_point = 0
+        for idx_region, region in enumerate(region_info[name].values()):
+            region = region["shape_attributes"]
+
+            h_points = list(points_aug[0][last_point:last_point + len(region['all_points_x']), 0].astype(np.float64))
+            v_points = list(points_aug[0][last_point:last_point + len(region['all_points_y']), 1].astype(np.float64))
+            region_out[str(idx) + ".png"]["regions"][str(idx_region)] = {"shape_attributes": {'all_points_x': h_points, 'all_points_y': v_points}}
+            
+            last_point += len(region['all_points_x'])
 
         out_path = os.path.join(output_folder, str(idx) + ".png")
 
-        region_out[str(idx) + ".png"] = points_aug
-        cv2.imwrite(out_path, img_aug)
+        res = cv2.imwrite(out_path, img_aug[0])
+        
+    with open(os.path.join(output_folder,"regions.json"), "w") as outfile: 
+        json.dump(region_out, outfile)
 
 
 class DataGenerator(KU.Sequence):
