@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 from enum import Enum
+import random
 import json
 import os
+import glob
 
 import skimage
 from skimage import draw
@@ -63,10 +65,52 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
     return decoded_img
 
 
+def generate_data(images_to_generate: int, input_path: str, output_folder: str, augmentation,
+                  region_point_path: str):
+    """ Generate data an saves it to disk.
+
+    The data generation is a slow task. This functions aims to generate a defined set of images, and
+    regions, to improve the performance of the train process.
+
+    Args:
+        images_to_generate:
+        input_path:
+        output_folder:
+        augmentation:
+        region_point_path:
+
+    Returns:
+
+    """
+    filenames = glob.glob(input_path)
+
+    region_info = json.load(open(region_point_path))
+    region_info = {k: v["regions"] for k, v in region_info.items()}
+
+    region_out = {}
+
+    augmentation = iaa.Sequential(augmentation)
+
+    for idx in range(images_to_generate):
+        filename = random.choice(filenames)
+        _, name = os.path.split(filename)
+
+        img = cv2.imread(filename)
+        points = region_info[name]
+
+        img_aug, points_aug = augmentation(images=[img], keypoints=[points])
+
+        out_path = os.path.join(output_folder, str(idx) + ".png")
+
+        region_out[str(idx) + ".png"] = points_aug
+        cv2.imwrite(out_path, img_aug)
+
+
 class DataGenerator(KU.Sequence):
 
-    def __init__(self, batch_size: int, steps: int, path: str, region_path: str, shape, max_output: int,
-                 multi_type: bool = False, regression: bool = False, rgb_input: bool = True, augmentation=None):
+    def __init__(self, batch_size: int, steps: int, path: str, region_path: str, shape,
+                 max_output: int, multi_type: bool = False, regression: bool = False,
+                 rgb_input: bool = True, augmentation=None):
         self.__steps = steps
         self.__base_path = path
         self.__multi_type = multi_type
@@ -136,7 +180,8 @@ class DataGenerator(KU.Sequence):
             input_img = os.path.join(self.__base_path, filename)
             input_img = cv2.imread(input_img)
 
-            mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size), dtype=np.float32)
+            mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size),
+                            dtype=np.float32)
 
             h_points = []
             v_points = []
@@ -158,11 +203,13 @@ class DataGenerator(KU.Sequence):
                     break
 
                 region = region["shape_attributes"]
-                region_points = points[n_regions_points:n_regions_points + len(region['all_points_y'])]
+                region_points = points[
+                                n_regions_points:n_regions_points + len(region['all_points_y'])]
 
                 n_regions_points = n_regions_points + len(region['all_points_y'])
 
-                channel_mask = self.__draw_polygon(region_points, (input_img.shape[0], input_img.shape[1]))
+                channel_mask = self.__draw_polygon(region_points,
+                                                   (input_img.shape[0], input_img.shape[1]))
 
                 mask[:, :, idx_channel] = channel_mask
                 idx_channel += 1
@@ -173,7 +220,8 @@ class DataGenerator(KU.Sequence):
             else:
                 input_shape = self.__shape
 
-            input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__shape[0], self.__shape[1], 3)
+            input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__shape[0],
+                                                                                 self.__shape[1], 3)
 
             masks.append(mask)
             regressors.append(len(self.__region_data[filename].values()))
