@@ -67,7 +67,7 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
 
 
 def generate_data(images_to_generate: int, input_path: str, output_folder: str, augmentation,
-                  region_point_path: str):
+                  region_point_path: str, to_mask: bool = False):
     """ Generate data an saves it to disk.
 
     The data generation is a slow task. This functions aims to generate a defined set of images, and
@@ -79,6 +79,7 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
         output_folder:
         augmentation:
         region_point_path:
+        to_mask:
 
     Returns:
 
@@ -88,20 +89,26 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
     region_info = json.load(open(region_point_path))
     region_info = {k: v["regions"] for k, v in region_info.items()}
 
-    region_out = {}
+    if not to_mask:
+        region_out = {}
 
     augmentation = iaa.Sequential(augmentation)
-    os.makedirs(output_folder, exist_ok = True)
+    os.makedirs(output_folder, exist_ok=True)
 
     for idx in tqdm.tqdm(range(images_to_generate)):
-        region_out[str(idx) + ".png"] = {"regions": {}}
+        if to_mask:
+            masks = []
+        else:
+            region_out[str(idx) + ".png"] = {"regions": {}}
+
         filename = random.choice(filenames)
         _, name = os.path.split(filename)
 
         img = cv2.imread(filename)
-        
+
         h_points = []
         v_points = []
+
         for region in region_info[name].values():
             region = region["shape_attributes"]
 
@@ -109,25 +116,35 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
             v_points += region['all_points_y']
 
         points = np.column_stack((h_points, v_points))
-        
+
         img_aug, points_aug = augmentation(images=[img], keypoints=[points])
-        
+
         last_point = 0
         for idx_region, region in enumerate(region_info[name].values()):
             region = region["shape_attributes"]
+            points = points_aug[0][last_point:last_point + len(region['all_points_x']), :].astype(
+                np.float64)
 
-            h_points = list(points_aug[0][last_point:last_point + len(region['all_points_x']), 0].astype(np.float64))
-            v_points = list(points_aug[0][last_point:last_point + len(region['all_points_y']), 1].astype(np.float64))
-            region_out[str(idx) + ".png"]["regions"][str(idx_region)] = {"shape_attributes": {'all_points_x': h_points, 'all_points_y': v_points}}
-            
+            if to_mask:
+                mask = np.zeros((img_aug.shape[0], img_aug.shape[1]))
+                mask = cv2.drawContours(mask, [points], -1, 1, -1)
+
+                masks.append(mask)
+            else:
+                region_out[f"{idx}.png"]["regions"][str(idx_region)] = {
+                    "shape_attributes": {'all_points_x': list(points[:, 0]),
+                                         'all_points_y': list(points[:, 1])}}
+
             last_point += len(region['all_points_x'])
 
         out_path = os.path.join(output_folder, str(idx) + ".png")
+        cv2.imwrite(out_path, img_aug[0])
 
-        res = cv2.imwrite(out_path, img_aug[0])
-        
-    with open(os.path.join(output_folder,"regions.json"), "w") as outfile: 
-        json.dump(region_out, outfile)
+    if to_mask:
+        pass
+    else:
+        with open(os.path.join(output_folder, "regions.json"), "w") as outfile:
+            json.dump(region_out, outfile)
 
 
 class DataGenerator(KU.Sequence):
@@ -169,13 +186,11 @@ class DataGenerator(KU.Sequence):
         return info
 
     def __draw_polygon(self, polygon, shape):
-        rr, cc = skimage.draw.polygon(polygon[:, 1], polygon[:, 0])
-        channel_mask = np.zeros(shape)
+        polygon = polygon.astype(int)
 
-        rr[rr >= shape[0]] = shape[0] - 1
-        cc[cc >= shape[1]] = shape[1] - 1
+        channel_mask = np.zeros(shape, dtype=np.uint8)
 
-        channel_mask[rr, cc] = 1
+        cv2.drawContours(channel_mask, [polygon], -1, 1, -1)
         channel_mask = cv2.resize(channel_mask, self.__shape)
 
         return channel_mask
