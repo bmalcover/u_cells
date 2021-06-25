@@ -67,7 +67,7 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
 
 
 def generate_data(images_to_generate: int, input_path: str, output_folder: str, augmentation,
-                  region_point_path: str, to_mask: bool = False):
+                  region_point_path: str, to_mask: bool = False, output_shape=None):
     """ Generate data an saves it to disk.
 
     The data generation is a slow task. This functions aims to generate a defined set of images, and
@@ -80,6 +80,7 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
         augmentation:
         region_point_path:
         to_mask:
+        output_shape:
 
     Returns:
 
@@ -118,16 +119,21 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
         points = np.column_stack((h_points, v_points))
 
         img_aug, points_aug = augmentation(images=[img], keypoints=[points])
+        img_aug = img_aug[0]
+
+        img_aug = skimage.transform.resize(img_aug, (output_shape[0], output_shape[1], 3))
 
         last_point = 0
         for idx_region, region in enumerate(region_info[name].values()):
             region = region["shape_attributes"]
             points = points_aug[0][last_point:last_point + len(region['all_points_x']), :].astype(
-                np.float64)
+                int)
 
             if to_mask:
-                mask = np.zeros((img_aug.shape[0], img_aug.shape[1]))
+                mask = np.zeros((img_aug.shape[0], img_aug.shape[1]), dtype=np.uint8)
                 mask = cv2.drawContours(mask, [points], -1, 1, -1)
+
+                mask = skimage.transform.resize(mask, output_shape)
 
                 masks.append(mask)
             else:
@@ -138,11 +144,13 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
             last_point += len(region['all_points_x'])
 
         out_path = os.path.join(output_folder, str(idx) + ".png")
-        cv2.imwrite(out_path, img_aug[0])
+        cv2.imwrite(out_path, img_aug * 255)
 
-    if to_mask:
-        pass
-    else:
+        if to_mask:
+            with open(os.path.join(output_folder, str(idx) + ".npy"), 'wb+') as f:
+                np.save(f, np.array(masks))
+
+    if not to_mask:
         with open(os.path.join(output_folder, "regions.json"), "w") as outfile:
             json.dump(region_out, outfile)
 
@@ -150,17 +158,18 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
 class DataGenerator(KU.Sequence):
 
     def __init__(self, batch_size: int, steps: int, path: str, region_path: str, shape,
-                 max_output: int, multi_type: bool = False, regression: bool = False,
-                 rgb_input: bool = True, augmentation=None):
+                 output_size: int, multi_type: bool = False, regression: bool = False,
+                 rgb_input: bool = True, augmentation=None, load_from_cache: bool = False):
         self.__steps = steps
         self.__base_path = path
         self.__multi_type = multi_type
         self.__regression = regression
         self.__shape = shape
         self.__rgb = rgb_input
-        self.__output_size = max_output
+        self.__output_size = output_size
         self.__batch_size = batch_size
 
+        self.__load_from_cache = load_from_cache
         self.__augmentation = iaa.Sequential(augmentation)
 
         self.__region_data = self.__get_regions_info(region_path)
@@ -213,54 +222,71 @@ class DataGenerator(KU.Sequence):
 
         for n_batch in range(0, self.__batch_size):
             idx = (idx + n_batch) % len(self.__keys)
-
             filename = self.__keys[idx]
 
-            input_img = os.path.join(self.__base_path, filename)
-            input_img = cv2.imread(input_img)
-
-            mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size),
-                            dtype=np.float32)
-
-            h_points = []
-            v_points = []
-            for region in self.__region_data[filename].values():
-                region = region["shape_attributes"]
-
-                h_points += region['all_points_x']
-                v_points += region['all_points_y']
-
-            points = np.column_stack((h_points, v_points))
-
-            if self.__augmentation is not None:
-                img_aug, points_aug = self.__augmentation(images=[input_img], keypoints=[points])
-                input_img, points = img_aug[0], points_aug[0]
-
-            n_regions_points = 0
-            for idx_channel, (key, region) in enumerate(list(self.__region_data[filename].items())):
-                if idx_channel == self.__output_size:
-                    break
-
-                region = region["shape_attributes"]
-                region_points = points[
-                                n_regions_points:n_regions_points + len(region['all_points_y'])]
-
-                n_regions_points = n_regions_points + len(region['all_points_y'])
-
-                channel_mask = self.__draw_polygon(region_points,
-                                                   (input_img.shape[0], input_img.shape[1]))
-
-                mask[:, :, idx_channel] = channel_mask
-                idx_channel += 1
-
-            mask = mask.reshape((self.__shape[0], self.__shape[1], self.__output_size))
             if self.__rgb:
                 input_shape = (self.__shape[0], self.__shape[1], 3)
             else:
                 input_shape = self.__shape
 
+            input_img = os.path.join(self.__base_path, filename)
+            input_img = cv2.imread(input_img)
             input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__shape[0],
                                                                                  self.__shape[1], 3)
+
+            if self.__load_from_cache:
+                with open(os.path.join(self.__base_path, f"{filename.split('.')[0]}.npy"),
+                          'rb') as f:
+                    mask = np.load(f)
+                    mask = mask.reshape((self.__shape[0], self.__shape[1], -1))
+
+                    if mask.shape[-1] < self.__output_size:
+                        diff = self.__output_size - mask.shape[-1]
+
+                        # Depth == difference between mask and output size
+                        aux_mask = np.zeros((self.__shape[0], self.__shape[1], diff))
+                        mask = np.dstack((mask, aux_mask))
+                    elif mask.shape[-1] > self.__output_size:
+                        mask = mask[:, :, :100]
+
+            else:
+                mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size),
+                                dtype=np.float32)
+
+                h_points = []
+                v_points = []
+                for region in self.__region_data[filename].values():
+                    region = region["shape_attributes"]
+
+                    h_points += region['all_points_x']
+                    v_points += region['all_points_y']
+
+                points = np.column_stack((h_points, v_points))
+
+                if self.__augmentation is not None:
+                    img_aug, points_aug = self.__augmentation(images=[input_img],
+                                                              keypoints=[points])
+                    input_img, points = img_aug[0], points_aug[0]
+
+                n_regions_points = 0
+                for idx_channel, (key, region) in enumerate(
+                        list(self.__region_data[filename].items())):
+                    if idx_channel == self.__output_size:
+                        break
+
+                    region = region["shape_attributes"]
+                    region_points = points[
+                                    n_regions_points:n_regions_points + len(region['all_points_y'])]
+
+                    n_regions_points = n_regions_points + len(region['all_points_y'])
+
+                    channel_mask = self.__draw_polygon(region_points,
+                                                       (input_img.shape[0], input_img.shape[1]))
+
+                    mask[:, :, idx_channel] = channel_mask
+                    idx_channel += 1
+
+            mask = mask.reshape((self.__shape[0], self.__shape[1], self.__output_size))
 
             masks.append(mask)
             regressors.append(len(self.__region_data[filename].values()))
