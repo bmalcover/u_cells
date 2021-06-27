@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+""" Data generators used by the U-Net neural network.
+
+"""
 from enum import Enum
 import random
 import json
@@ -9,7 +12,6 @@ import cv2
 import tqdm
 import skimage
 import numpy as np
-from skimage import draw
 from skimage import transform
 import imgaug.augmenters as iaa
 
@@ -66,7 +68,7 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
     return decoded_img
 
 
-def generate_data(images_to_generate: int, input_path: str, output_folder: str, augmentation,
+def generate_data(n_images: int, input_path: str, output_folder: str, augmentation,
                   region_point_path: str, to_mask: bool = False, output_shape=None):
     """ Generate data an saves it to disk.
 
@@ -74,15 +76,13 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
     regions, to improve the performance of the train process.
 
     Args:
-        images_to_generate:
-        input_path:
-        output_folder:
+        n_images (int):  Number of images to generate.
+        input_path (str): Path (glob format) containing the set of files.
+        output_folder (str): Path to output files.
         augmentation:
         region_point_path:
         to_mask:
         output_shape:
-
-    Returns:
 
     """
     filenames = glob.glob(input_path)
@@ -90,13 +90,12 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
     region_info = json.load(open(region_point_path))
     region_info = {k: v["regions"] for k, v in region_info.items()}
 
-    if not to_mask:
-        region_out = {}
+    region_out = {}
 
     augmentation = iaa.Sequential(augmentation)
     os.makedirs(output_folder, exist_ok=True)
 
-    for idx in tqdm.tqdm(range(images_to_generate)):
+    for idx in tqdm.tqdm(range(n_images)):
         if to_mask:
             masks = []
         else:
@@ -175,7 +174,7 @@ class DataGenerator(KU.Sequence):
         self.__region_data = self.__get_regions_info(region_path)
         self.__keys = list(self.__region_data.keys())
 
-    def __get_regions_info(self, path: str):
+    def __get_regions_info(self, path: str) -> dict:
         """ Gets the information of the regions.
 
         The information is stored with VIA 2.0 format. The regions are saved as a dictionary for
@@ -194,17 +193,32 @@ class DataGenerator(KU.Sequence):
 
         return info
 
-    def __draw_polygon(self, polygon, shape):
-        polygon = polygon.astype(int)
+    def __draw_polygon(self, points, shape) -> np.ndarray:
+        """ Creates a mask from a set of points
+
+        Draws the contours defined for the points passed as parameter. The list of points indicates
+        the contour of and object.
+
+        Args:
+            points: List of points
+            shape: Tuple of two size
+
+        Returns:
+
+        """
+        points = points.astype(int)
 
         channel_mask = np.zeros(shape, dtype=np.uint8)
 
-        cv2.drawContours(channel_mask, [polygon], -1, 1, -1)
+        cv2.drawContours(channel_mask, [points], -1, 1, -1)
         channel_mask = cv2.resize(channel_mask, self.__shape)
 
         return channel_mask
 
     def __len__(self):
+        """ Return number of batches
+
+        """
         return self.__steps
 
     def __getitem__(self, idx):
@@ -238,6 +252,7 @@ class DataGenerator(KU.Sequence):
                 with open(os.path.join(self.__base_path, f"{filename.split('.')[0]}.npy"),
                           'rb') as f:
                     mask = np.load(f)
+                    # Mask has a shape of (shape[0], shape[1], number of channels with objects)
                     mask = mask.reshape((self.__shape[0], self.__shape[1], -1))
 
                     if mask.shape[-1] < self.__output_size:
