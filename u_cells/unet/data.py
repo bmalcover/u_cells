@@ -159,7 +159,8 @@ class DataGenerator(KU.Sequence):
 
     def __init__(self, batch_size: int, steps: int, path: str, shape, output_size: int,
                  multi_type: bool = False, regression: bool = False, region_path: str = None,
-                 rgb_input: bool = True, augmentation=None, load_from_cache: bool = False):
+                 rgb_input: bool = True, augmentation=None, load_from_cache: bool = False,
+                 do_background: bool = False):
         if "*" not in path and region_path is None:
             raise Exception("Regions path or a path with global format needed")
 
@@ -174,6 +175,7 @@ class DataGenerator(KU.Sequence):
 
         self.__load_from_cache = load_from_cache
         self.__augmentation = iaa.Sequential(augmentation)
+        self.__do_background = do_background
 
         if region_path is not None:
             self.__region_data = self.__get_regions_info(region_path)
@@ -228,6 +230,50 @@ class DataGenerator(KU.Sequence):
         """
         return self.__steps
 
+    def __load_cache(self, path: str, filename: str, n_channels: int, do_background: bool):
+        """ Loads cache masks.
+
+        Args:
+            path:
+            filename:
+            n_channels:
+
+        Returns:
+
+        """
+        mask_path, _ = os.path.split(path)
+        _, name_path = os.path.split(filename)
+
+        mask = None
+        with open(os.path.join(mask_path, f"{name_path.split('.')[0]}.npy"),
+                  'rb') as f:
+            mask = np.load(f)
+            # Mask has a shape of (shape[0], shape[1], number of channels with objects)
+            mask = mask.reshape((self.__shape[0], self.__shape[1], -1))
+
+            n_regions = mask.shape[-1]
+
+            if mask.shape[-1] < self.__output_size:
+                diff = self.__output_size - mask.shape[-1]
+
+                # Depth == difference between mask and output size
+                aux_mask = np.zeros((self.__shape[0], self.__shape[1], diff))
+                mask = np.dstack((mask, aux_mask))
+            elif mask.shape[-1] > self.__output_size:
+                mask = mask[:, :, :n_channels]
+
+        if mask is None:
+            mask = np.zeros((self.__shape[0], self.__shape[1], n_channels))
+
+        if do_background:
+            foreground = np.sum(mask, axis=-1)
+            background = np.zeros_like(foreground)
+
+            background[foreground == 0] = 1
+            mask = np.dstack([background, mask])
+
+        return mask, n_regions
+
     def __getitem__(self, idx):
         """ Returns a batch to train.
 
@@ -247,7 +293,6 @@ class DataGenerator(KU.Sequence):
             files = self.__keys
 
         for n_batch in range(0, self.__batch_size):
-            n_regions = []
             idx = (idx + n_batch) % len(files)
             filename = files[idx]
 
@@ -266,25 +311,9 @@ class DataGenerator(KU.Sequence):
                                                                                  self.__shape[1], 3)
 
             if self.__load_from_cache:
-                mask_path, _ = os.path.split(path)
-                _, name_path = os.path.split(filename)
-
-                with open(os.path.join(mask_path, f"{name_path.split('.')[0]}.npy"),
-                          'rb') as f:
-                    mask = np.load(f)
-                    # Mask has a shape of (shape[0], shape[1], number of channels with objects)
-                    mask = mask.reshape((self.__shape[0], self.__shape[1], -1))
-
-                    n_regions = mask.shape[-1]
-
-                    if mask.shape[-1] < self.__output_size:
-                        diff = self.__output_size - mask.shape[-1]
-
-                        # Depth == difference between mask and output size
-                        aux_mask = np.zeros((self.__shape[0], self.__shape[1], diff))
-                        mask = np.dstack((mask, aux_mask))
-                    elif mask.shape[-1] > self.__output_size:
-                        mask = mask[:, :, :100]
+                mask, n_regions = self.__load_cache(path=path, filename=filename,
+                                                    n_channels=self.__output_size,
+                                                    do_background=self.__do_background)
 
             else:
                 mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size),
@@ -324,7 +353,11 @@ class DataGenerator(KU.Sequence):
                     mask[:, :, idx_channel] = channel_mask
                     idx_channel += 1
 
-            mask = mask.reshape((self.__shape[0], self.__shape[1], self.__output_size))
+            output_size = self.__output_size
+            if self.__do_background:
+                output_size += 1
+
+            mask = mask.reshape((self.__shape[0], self.__shape[1], output_size))
 
             masks.append(mask)
             regressors.append(n_regions)
