@@ -9,7 +9,6 @@ import cv2
 import tqdm
 import skimage
 import numpy as np
-from skimage import draw
 from skimage import transform
 import imgaug.augmenters as iaa
 
@@ -130,10 +129,10 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
                 int)
 
             if to_mask:
-                mask = np.zeros((img_aug.shape[0], img_aug.shape[1]), dtype=np.uint8)
+                mask = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
                 mask = cv2.drawContours(mask, [points], -1, 1, -1)
 
-                mask = skimage.transform.resize(mask, output_shape)
+                mask = cv2.resize(mask, output_shape)
 
                 masks.append(mask)
             else:
@@ -148,6 +147,7 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
 
         if to_mask:
             with open(os.path.join(output_folder, str(idx) + ".npy"), 'wb+') as f:
+                masks = np.dstack(masks)
                 np.save(f, np.array(masks))
 
     if not to_mask:
@@ -157,11 +157,14 @@ def generate_data(images_to_generate: int, input_path: str, output_folder: str, 
 
 class DataGenerator(KU.Sequence):
 
-    def __init__(self, batch_size: int, steps: int, path: str, region_path: str, shape,
-                 output_size: int, multi_type: bool = False, regression: bool = False,
+    def __init__(self, batch_size: int, steps: int, path: str, shape, output_size: int,
+                 multi_type: bool = False, regression: bool = False, region_path: str = None,
                  rgb_input: bool = True, augmentation=None, load_from_cache: bool = False):
-        self.__steps = steps
+        if "*" not in path and region_path is None:
+            raise Exception("Regions path or a path with global format needed")
+
         self.__base_path = path
+        self.__steps = steps
         self.__multi_type = multi_type
         self.__regression = regression
         self.__shape = shape
@@ -172,8 +175,11 @@ class DataGenerator(KU.Sequence):
         self.__load_from_cache = load_from_cache
         self.__augmentation = iaa.Sequential(augmentation)
 
-        self.__region_data = self.__get_regions_info(region_path)
-        self.__keys = list(self.__region_data.keys())
+        if region_path is not None:
+            self.__region_data = self.__get_regions_info(region_path)
+            self.__keys = list(self.__region_data.keys())
+        else:
+            self.__keys = None
 
     def __get_regions_info(self, path: str):
         """ Gets the information of the regions.
@@ -220,25 +226,40 @@ class DataGenerator(KU.Sequence):
         masks = []
         regressors = []
 
+        if self.__keys is None:
+            files = glob.glob(self.__base_path)
+        else:
+            files = self.__keys
+
         for n_batch in range(0, self.__batch_size):
-            idx = (idx + n_batch) % len(self.__keys)
-            filename = self.__keys[idx]
+            n_regions = []
+            idx = (idx + n_batch) % len(files)
+            filename = files[idx]
 
             if self.__rgb:
                 input_shape = (self.__shape[0], self.__shape[1], 3)
             else:
                 input_shape = self.__shape
 
-            input_img = os.path.join(self.__base_path, filename)
-            input_img = cv2.imread(input_img)
+            if not self.__load_from_cache:
+                path = os.path.join(self.__base_path, filename)
+            else:
+                path = filename
+
+            input_img = cv2.imread(path)
             input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__shape[0],
                                                                                  self.__shape[1], 3)
 
             if self.__load_from_cache:
-                with open(os.path.join(self.__base_path, f"{filename.split('.')[0]}.npy"),
+                mask_path, _ = os.path.split(path)
+                _, name_path = os.path.split(filename)
+
+                with open(os.path.join(mask_path, f"{name_path.split('.')[0]}.npy"),
                           'rb') as f:
                     mask = np.load(f)
                     mask = mask.reshape((self.__shape[0], self.__shape[1], -1))
+
+                    n_regions = mask.shape[-1]
 
                     if mask.shape[-1] < self.__output_size:
                         diff = self.__output_size - mask.shape[-1]
@@ -252,6 +273,7 @@ class DataGenerator(KU.Sequence):
             else:
                 mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size),
                                 dtype=np.float32)
+                n_regions = len(self.__region_data[filename].values())
 
                 h_points = []
                 v_points = []
@@ -289,7 +311,7 @@ class DataGenerator(KU.Sequence):
             mask = mask.reshape((self.__shape[0], self.__shape[1], self.__output_size))
 
             masks.append(mask)
-            regressors.append(len(self.__region_data[filename].values()))
+            regressors.append(n_regions)
 
             input_batch.append(input_img)
 
