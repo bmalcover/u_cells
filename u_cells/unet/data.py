@@ -265,13 +265,6 @@ class DataGenerator(KU.Sequence):
         if mask is None:
             mask = np.zeros((self.__shape[0], self.__shape[1], n_channels))
 
-        if do_background:
-            foreground = np.sum(mask, axis=-1)
-            background = np.zeros_like(foreground)
-
-            background[foreground == 0] = 1
-            mask = np.dstack([background, mask])
-
         return mask, n_regions
 
     def __getitem__(self, idx):
@@ -312,8 +305,7 @@ class DataGenerator(KU.Sequence):
 
             if self.__load_from_cache:
                 mask, n_regions = self.__load_cache(path=path, filename=filename,
-                                                    n_channels=self.__output_size,
-                                                    do_background=self.__do_background)
+                                                    n_channels=self.__output_size)
 
             else:
                 mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size),
@@ -354,8 +346,18 @@ class DataGenerator(KU.Sequence):
                     idx_channel += 1
 
             output_size = self.__output_size
+
             if self.__do_background:
+                foreground = np.sum(mask, axis=-1)
+                background = np.zeros_like(foreground)
+
+                background[foreground == 0] = 1
+                mask = np.dstack([background, mask])
+
                 output_size += 1
+
+            if not self.__multi_type:
+                mask = np.sum(mask, axis=-1)
 
             mask = mask.reshape((self.__shape[0], self.__shape[1], output_size))
 

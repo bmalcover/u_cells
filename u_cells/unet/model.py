@@ -432,3 +432,10 @@ class UNet:
     @property
     def model(self):
         return self.__internal_model
+
+    @property
+    def history(self):
+        return self.__history
+
+    def predict(self, *args, **kwargs):
+        return self.__internal_model.predict(*args, **kwargs)
