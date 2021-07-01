@@ -230,7 +230,7 @@ class DataGenerator(KU.Sequence):
         """
         return self.__steps
 
-    def __load_cache(self, path: str, filename: str, n_channels: int, do_background: bool):
+    def __load_cache(self, path: str, filename: str, n_channels: int):
         """ Loads cache masks.
 
         Args:

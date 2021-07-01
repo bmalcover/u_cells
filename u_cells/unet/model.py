@@ -344,7 +344,7 @@ class UNet:
         self.__internal_model = model
 
     def compile(self, loss_func: Union[str, Callable] = "categorical_crossentropy",
-                check: bool = False):
+                check: bool = False, learning_rate: Union[int, float] = 3e-5, *args, **kwargs):
         """ Compiles the models.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
@@ -353,6 +353,7 @@ class UNet:
         Args:
             loss_func (str | Callable): Loss function to apply to the main output of the U-Net.
             check (bool): Only used in the RPN context. If true checks
+            learning_rate
 
         Returns:
 
@@ -363,8 +364,8 @@ class UNet:
             if self.__build_regressor:
                 loss_functions['regressor_output'] = 'mean_absolute_error'
 
-            self.__internal_model.compile(optimizer=Adam(lr=3e-5), loss=loss_functions,
-                                          metrics=['categorical_accuracy'])
+            self.__internal_model.compile(*args, **kwargs, optimizer=Adam(lr=learning_rate),
+                                          loss=loss_functions, metrics=['categorical_accuracy'])
         else:
             loss_names = ["rpn_class_loss", "rpn_bbox_loss"]
 
@@ -375,11 +376,13 @@ class UNet:
                 loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
                 self.__internal_model.add_loss(loss)
 
-            self.__internal_model.compile(optimizer=Adam(lr=self.__config.LEARNING_RATE),
+            self.__internal_model.compile(*args, **kwargs,
+                                          optimizer=Adam(lr=self.__config.LEARNING_RATE),
                                           loss=[loss_func, None, None])
 
     def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
-              validation_steps: int, check_point_path: Union[str, None], callbacks=None, verbose=1):
+              validation_steps: int, check_point_path: Union[str, None], callbacks=None, verbose=1,
+              *args, **kwargs):
         """ Trains the model with the info passed as parameters.
 
         The keras model is trained with the information passed as parameters. The info is defined
@@ -405,7 +408,8 @@ class UNet:
                                                 verbose=verbose,
                                                 steps_per_epoch=self.__config.STEPS_PER_EPOCH,
                                                 callbacks=callbacks, validation_data=val_generator,
-                                                validation_steps=self.__config.VALIDATION_STEPS)
+                                                validation_steps=self.__config.VALIDATION_STEPS,
+                                                *args, **kwargs)
         else:
             if callbacks is None:
                 callbacks = []
@@ -422,11 +426,12 @@ class UNet:
                                                     validation_steps=validation_steps,
                                                     callbacks=callbacks,
                                                     steps_per_epoch=steps_per_epoch,
-                                                    verbose=verbose)
+                                                    verbose=verbose, *args, **kwargs)
             else:
                 history = self.__internal_model.fit(train_generator, epochs=epochs,
                                                     callbacks=callbacks, verbose=verbose,
-                                                    steps_per_epoch=steps_per_epoch)
+                                                    steps_per_epoch=steps_per_epoch, *args,
+                                                    **kwargs)
         self.__history = history
 
     @property
