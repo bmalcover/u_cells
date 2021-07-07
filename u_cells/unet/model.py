@@ -319,6 +319,8 @@ class UNet:
                                                 dtype=tf.int32)
             input_rpn_bbox = keras_layer.Input(shape=[None, 4], name="input_rpn_bbox",
                                                dtype=tf.float32)
+            input_gt_class_ids = keras_layer.Input(shape=[None], name="input_gt_class_ids",
+                                                   dtype=tf.int32)
 
             # RPN Loss
             rpn_class_loss = keras_layer.Lambda(lambda x: rpn_model.class_loss_graph(*x),
@@ -328,12 +330,16 @@ class UNet:
                                                name="rpn_bbox_loss")(
                 [input_rpn_bbox, input_rpn_match, rpn_bbox])
 
+            mask_loss = keras_layer.Lambda(lambda x: rpn_model.mrcnn_mask_loss_graph(*x),
+                                           name="img_out_loss")(
+                [input_image, input_gt_class_ids, conv10])
+
             # Input of the model
-            inputs = [input_image, input_rpn_match, input_rpn_bbox]
+            inputs = [input_image, input_rpn_match, input_rpn_bbox, input_gt_class_ids]
 
             # Output of the model
             outputs = [conv10,
-                       rpn_class_logits,
+                       mask_loss,
                        rpn_class,
                        rpn_bbox,
                        rpn_class_loss,
@@ -367,7 +373,10 @@ class UNet:
             self.__internal_model.compile(*args, **kwargs, optimizer=Adam(lr=learning_rate),
                                           loss=loss_functions, metrics=['categorical_accuracy'])
         else:
-            loss_names = ["rpn_class_loss", "rpn_bbox_loss"]
+            loss_names = ["rpn_class_loss", "rpn_bbox_loss", "img_out_loss"]
+
+            self.__internal_model._losses = []
+            self.__internal_model._per_input_losses = {}
 
             for name in loss_names:
                 layer = self.__internal_model.get_layer(name)

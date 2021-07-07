@@ -265,6 +265,8 @@ class DataGenerator(KU.Sequence):
                 batch_gt_masks = np.zeros(
                     (self.batch_size, gt_masks.shape[0], gt_masks.shape[1],
                      self.config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
+                batch_gt_class_ids = np.zeros(
+                    (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32)
             
                         # If more instances than fits in the array, sub-sample from them.
             if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
@@ -277,11 +279,12 @@ class DataGenerator(KU.Sequence):
             batch_rpn_bbox[b] = rpn_bbox
             batch_images[b] = self.mold_image(image.astype(np.float32))
             batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
+            batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             b += 1
 
-        inputs = [batch_images, batch_rpn_match, batch_rpn_bbox]
+        inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
 #         inputs = [batch_images]
-        outputs = [batch_gt_masks]
+        outputs = []
 
         return inputs, outputs
 
