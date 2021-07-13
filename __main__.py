@@ -43,12 +43,19 @@ def main():
                    ],
                    random_order=True)]
 
-    train_generator = u_data.DataGenerator(4, 100, '.\\out_aug', "regions.json", (512, 512), 100,
-                                           augmentation=None)
+    u_data.generate_data(4, './in/bboxes/train/*.png', './out_aug/', augmentation,
+                         './in/bboxes/train/via_region_data.json', to_mask=True,
+                         output_shape=(512, 512))
+
+
+    train_generator = u_data.DataGenerator(4, 100, '.\\out_aug\\*.png', (512, 512), 100,
+                                           augmentation=None, load_from_cache=True,
+                                           do_background=True, multi_type=True)
 
     for t, m in train_generator:
         print(type(t))
         break
+
 
 
 if __name__ == '__main__':
