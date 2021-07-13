@@ -3,6 +3,7 @@
 
 """
 from enum import Enum
+import itertools
 import random
 import json
 import os
@@ -160,7 +161,7 @@ class DataGenerator(KU.Sequence):
     def __init__(self, batch_size: int, steps: int, path: str, shape, output_size: int,
                  multi_type: bool = False, regression: bool = False, region_path: str = None,
                  rgb_input: bool = True, augmentation=None, load_from_cache: bool = False,
-                 do_background: bool = False):
+                 do_background: bool = False, unified_batch: bool = False):
         if "*" not in path and region_path is None:
             raise Exception("Regions path or a path with global format needed")
 
@@ -176,6 +177,7 @@ class DataGenerator(KU.Sequence):
         self.__load_from_cache = load_from_cache
         self.__augmentation = iaa.Sequential(augmentation)
         self.__do_background = do_background
+        self.__unified_batch = unified_batch
 
         if region_path is not None:
             self.__region_data = self.__get_regions_info(region_path)
@@ -202,28 +204,6 @@ class DataGenerator(KU.Sequence):
 
         return info
 
-    def __draw_polygon(self, points, shape) -> np.ndarray:
-        """ Creates a mask from a set of points
-
-        Draws the contours defined for the points passed as parameter. The list of points indicates
-        the contour of and object.
-
-        Args:
-            points: List of points
-            shape: Tuple of two size
-
-        Returns:
-
-        """
-        points = points.astype(int)
-
-        channel_mask = np.zeros(shape, dtype=np.uint8)
-
-        cv2.drawContours(channel_mask, [points], -1, 1, -1)
-        channel_mask = cv2.resize(channel_mask, self.__shape)
-
-        return channel_mask
-
     def __len__(self):
         """ Return number of batches
 
@@ -249,7 +229,7 @@ class DataGenerator(KU.Sequence):
                   'rb') as f:
             mask = np.load(f)
             # Mask has a shape of (shape[0], shape[1], number of channels with objects)
-            mask = mask.reshape((self.__shape[0], self.__shape[1], -1))
+            mask = mask.reshape((mask.shape[0], mask.shape[1], -1))
 
             n_regions = mask.shape[-1]
 
@@ -267,6 +247,74 @@ class DataGenerator(KU.Sequence):
 
         return mask, n_regions
 
+    @staticmethod
+    def __draw_regions(regions, image, out_shape, augmentation):
+        """
+
+        Args:
+            regions:
+            image:
+            out_shape:
+            augmentation:
+
+        Returns:
+
+        """
+
+        def draw_polygon(pts, shape) -> np.ndarray:
+            """ Creates a mask from a set of points
+
+            Draws the contours defined for the points passed as parameter. The list of points
+            indicates the contour of and object.
+
+            Args:
+                pts: List of points
+                shape: Tuple of two size
+
+            Returns:
+
+            """
+            pts = pts.astype(int)
+
+            c_mask = np.zeros(shape, dtype=np.uint8)
+
+            cv2.drawContours(c_mask, [pts], -1, 1, -1)
+            c_mask = cv2.resize(c_mask, shape)
+
+            return c_mask
+
+        mask = np.zeros(out_shape, dtype=np.float32)
+
+        # We pass the points into numpy array format
+        h_points = [r["shape_attributes"]['all_points_x'] for r in regions.values()]
+        v_points = [r["shape_attributes"]['all_points_y'] for r in regions.values()]
+        regions_size = list(map(lambda x: len(x), h_points))
+
+        h_points = itertools.chain.from_iterable(h_points)
+        v_points = itertools.chain.from_iterable(v_points)
+
+        points = np.column_stack((h_points, v_points))
+
+        if augmentation is not None:
+            img_aug, points_aug = augmentation(images=[image], keypoints=[points])
+            input_img, points = img_aug[0], points_aug[0]
+
+        n_regions_points = 0
+        for idx_channel, (n_points) in enumerate(list(regions_size)):
+            if idx_channel == out_shape[-1]:
+                break
+
+            region_points = points[n_regions_points:n_regions_points + n_points]
+
+            n_regions_points = n_regions_points + n_points
+
+            channel_mask = draw_polygon(region_points, (image.shape[0], image.shape[1]))
+
+            mask[:, :, idx_channel] = channel_mask
+            idx_channel += 1
+
+        return mask, len(regions)
+
     def __getitem__(self, idx):
         """ Returns a batch to train.
 
@@ -280,75 +328,39 @@ class DataGenerator(KU.Sequence):
         masks = []
         regressors = []
 
-        if self.__keys is None:
+        output_shape = (self.__shape[0], self.__shape[1], self.__output_size)
+
+        files = self.__keys
+
+        if files is None:
             files = glob.glob(self.__base_path)
-        else:
-            files = self.__keys
 
         for n_batch in range(0, self.__batch_size):
             idx = (idx + n_batch) % len(files)
             filename = files[idx]
 
+            input_shape = self.__shape
             if self.__rgb:
                 input_shape = (self.__shape[0], self.__shape[1], 3)
-            else:
-                input_shape = self.__shape
 
+            path = filename
             if not self.__load_from_cache:
-                path = os.path.join(self.__base_path, filename)
-            else:
-                path = filename
+                path = os.path.join(self.__base_path, path)
 
             input_img = cv2.imread(path)
-            input_img = skimage.transform.resize(input_img, input_shape).reshape(self.__shape[0],
-                                                                                 self.__shape[1], 3)
+            input_img = skimage.transform.resize(input_img, input_shape)
 
             if self.__load_from_cache:
-                mask, n_regions = self.__load_cache(path=path, filename=filename,
-                                                    n_channels=self.__output_size)
+                mask, n_regions = self.__load_cache(path, filename, self.__output_size)
 
             else:
-                mask = np.zeros((self.__shape[0], self.__shape[1], self.__output_size),
-                                dtype=np.float32)
-                n_regions = len(self.__region_data[filename].values())
-
-                h_points = []
-                v_points = []
-                for region in self.__region_data[filename].values():
-                    region = region["shape_attributes"]
-
-                    h_points += region['all_points_x']
-                    v_points += region['all_points_y']
-
-                points = np.column_stack((h_points, v_points))
-
-                if self.__augmentation is not None:
-                    img_aug, points_aug = self.__augmentation(images=[input_img],
-                                                              keypoints=[points])
-                    input_img, points = img_aug[0], points_aug[0]
-
-                n_regions_points = 0
-                for idx_channel, (key, region) in enumerate(
-                        list(self.__region_data[filename].items())):
-                    if idx_channel == self.__output_size:
-                        break
-
-                    region = region["shape_attributes"]
-                    region_points = points[
-                                    n_regions_points:n_regions_points + len(region['all_points_y'])]
-
-                    n_regions_points = n_regions_points + len(region['all_points_y'])
-
-                    channel_mask = self.__draw_polygon(region_points,
-                                                       (input_img.shape[0], input_img.shape[1]))
-
-                    mask[:, :, idx_channel] = channel_mask
-                    idx_channel += 1
+                mask, n_regions = DataGenerator.__draw_regions(self.__region_data[filename],
+                                                               input_img, output_shape,
+                                                               self.__augmentation)
 
             output_size = self.__output_size
-
             if self.__do_background:
-                foreground = np.sum(mask, axis=-1)
+                foreground = np.sum(mask, axis=-1)  # We merge all the channels with info
                 background = np.zeros_like(foreground)
 
                 background[foreground == 0] = 1
@@ -366,12 +378,18 @@ class DataGenerator(KU.Sequence):
 
             input_batch.append(input_img)
 
+        if self.__unified_batch:
+            masks = [list(np.swapaxes(np.swapaxes(m, 0, 2), 1, 2)) for m in masks]
+
+            masks = list(itertools.chain.from_iterable(masks))
+            masks = np.dstack(masks)
+        else:
+            masks = np.array(masks)
+
         input_batch = np.array(input_batch)
-        masks = np.array(masks)
         regressors = np.array(regressors)
 
-        output = {"img_out": masks}
         if self.__regression:
-            output['regressor_output'] = regressors
-
-        return input_batch, output
+            return input_batch, {"img_out": masks, 'regressor_output': regressors}
+        else:
+            return input_batch, {"img_out": masks}
