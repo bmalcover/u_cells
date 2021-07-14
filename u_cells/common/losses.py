@@ -14,7 +14,7 @@ def onw_dice_coef(y_true, y_pred, smooth=1):
     """
     intersection = K.sum(K.abs(y_true * y_pred), axis=-1)
     return (2. * intersection + smooth) / (
-                K.sum(K.square(y_true), -1) + K.sum(K.square(y_pred), -1) + smooth)
+            K.sum(K.square(y_true), -1) + K.sum(K.square(y_pred), -1) + smooth)
 
 
 def own_dice_coef_loss(y_true, y_pred):
@@ -100,3 +100,35 @@ def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=
     dice = tf.reduce_mean(dice, name='dice_coe')
 
     return 1 - dice
+
+
+def positive_cce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """ Categorical cross entropy only for the slices with some positive element.
+
+    To calculate the loss only takes into consideration the channels with some value different to 0
+    in the ground truth.
+    Args:
+        y_true (tf.Tensor):
+        y_pred (tf.Tensor):
+
+    Returns:
+
+    """
+    zero_values = tf.reduce_sum(y_true, -1)
+    zero_values = tf.reduce_sum(zero_values, -1)
+
+    y_true = K.reshape(y_true, (-1, y_true.shape[-2], y_true.shape[-1]))
+    y_pred = K.reshape(y_pred, (-1, y_true.shape[-2], y_true.shape[-1]))
+
+    positives = K.reshape(zero_values, (-1, 1))[:, 0]
+    postives_ix = tf.compat.v1.where(positives > 0)[:, 0]
+
+    y_true = tf.gather(y_true, postives_ix)
+    y_pred = tf.gather(y_pred, postives_ix)
+
+    loss = K.switch(tf.size(input=y_true) > 0,
+                    K.binary_crossentropy(target=y_true, output=y_pred),
+                    tf.constant(0.0))
+    loss = K.mean(loss)
+
+    return loss

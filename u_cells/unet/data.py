@@ -290,8 +290,8 @@ class DataGenerator(KU.Sequence):
         v_points = [r["shape_attributes"]['all_points_y'] for r in regions.values()]
         regions_size = list(map(lambda x: len(x), h_points))
 
-        h_points = itertools.chain.from_iterable(h_points)
-        v_points = itertools.chain.from_iterable(v_points)
+        h_points = list(itertools.chain.from_iterable(h_points))
+        v_points = list(itertools.chain.from_iterable(v_points))
 
         points = np.column_stack((h_points, v_points))
 
