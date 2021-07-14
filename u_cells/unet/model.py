@@ -248,7 +248,8 @@ class UNet:
 
         return layers, block_id
 
-    def build_unet(self, n_filters=16, dilation_rate: int = 1, n_blocks: int = 5):
+    def build_unet(self, n_filters=16, dilation_rate: int = 1, n_blocks: int = 5,
+                   last_activation: str = "auto"):
         """ Builds the graph and model for the U-Net.
 
         The U-Net, first introduced by Ronnenberger et al., is an encoder-decoder architecture.
@@ -258,6 +259,7 @@ class UNet:
             n_filters:
             dilation_rate:
             n_blocks:
+            last_activation:
         """
         # Define input batch shape
         input_image = keras_layer.Input(self.__input_size, name="input_image")
@@ -288,16 +290,15 @@ class UNet:
                                        filters=filters_size, initial_block_id=last_block_id + 1,
                                        input_layer=input_decoder)
 
-        if self.__n_channels == 1:
+        if last_activation == "auto" and self.__n_channels == 1:
             last_activation = "sigmoid"
-        else:
+        elif last_activation == "auto":
             last_activation = "softmax"
 
         conv10 = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
                                     padding='same',
                                     dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                    name="img_out")(
-            list(decoder.values())[-1][-1])
+                                    name="img_out")(list(decoder.values())[-1][-1])
 
         if not self.__build_rpn and self.__build_regressor:
             model = keras_model.Model(inputs=input_image, outputs=[conv10, regressor[-1]])
