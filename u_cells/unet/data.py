@@ -279,7 +279,6 @@ class DataGenerator(KU.Sequence):
             c_mask = np.zeros(shape, dtype=np.uint8)
 
             cv2.drawContours(c_mask, [pts], -1, 1, -1)
-            c_mask = cv2.resize(c_mask, shape)
 
             return c_mask
 
@@ -309,6 +308,7 @@ class DataGenerator(KU.Sequence):
             n_regions_points = n_regions_points + n_points
 
             channel_mask = draw_polygon(region_points, (image.shape[0], image.shape[1]))
+            channel_mask = cv2.resize(channel_mask, (out_shape[0], out_shape[1]))
 
             mask[:, :, idx_channel] = channel_mask
             idx_channel += 1
@@ -348,7 +348,6 @@ class DataGenerator(KU.Sequence):
                 path = os.path.join(self.__base_path, path)
 
             input_img = cv2.imread(path)
-            input_img = skimage.transform.resize(input_img, input_shape)
 
             if self.__load_from_cache:
                 mask, n_regions = self.__load_cache(path, filename, self.__output_size)
@@ -357,6 +356,8 @@ class DataGenerator(KU.Sequence):
                 mask, n_regions = DataGenerator.__draw_regions(self.__region_data[filename],
                                                                input_img, output_shape,
                                                                self.__augmentation)
+
+            input_img = skimage.transform.resize(input_img, input_shape)
 
             output_size = self.__output_size
             if self.__do_background:
