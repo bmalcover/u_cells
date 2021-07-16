@@ -5,7 +5,7 @@ This module contains the set of functions that defines the original U-Net networ
 proposed by Ronnenberger et al. and is based on a Encoder-Decoder architecture.
 """
 
-from typing import Callable, Union, Tuple, List
+from typing import Callable, Union, Tuple
 import warnings
 
 import tensorflow.keras.models as keras_model
@@ -13,8 +13,99 @@ import tensorflow.keras.layers as keras_layer
 from tensorflow.keras.optimizers import *
 import tensorflow as tf
 
-from u_cells.u_cells.common import config
-from u_cells.u_cells.rpn import model as rpn_model
+from u_cells.common import config
+from u_cells.rpn import model as rpn_model
+
+
+class ConvBlock(keras_layer.Layer):
+    """ Convolutional block used on the encoder
+
+    """
+
+    def __init__(self, layer_idx: int, filters: int, kernel_size: Tuple[int, int],
+                 activation: str, kernel_initializer: str = 'he_normal', padding: str = "same",
+                 batch_normalization: bool = False, **kwargs):
+        super(ConvBlock, self).__init__(**kwargs)
+
+        self.__layer_idx = layer_idx
+        self.__is_batch_normalized = batch_normalization
+        self.__kernel_size = kernel_size
+        self.__activation = activation
+
+        self.conv2d_1 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
+                                           kernel_initializer=kernel_initializer, padding=padding,
+                                           activation=activation)
+
+        if batch_normalization:
+            self.batch_normalization_1 = keras_layer.BatchNormalization()
+
+        self.conv2d_2 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
+                                           kernel_initializer=kernel_initializer, padding=padding,
+                                           activation=activation)
+        self.batch_normalization_2 = keras_layer.BatchNormalization()
+
+    def call(self, inputs, training=None, **kwargs):
+        x = inputs
+        x = self.conv2d_1(x)
+
+        if self.__is_batch_normalized:
+            x = self.batch_normalization_1(x)
+
+        x = self.conv2d_2(x)
+
+        if self.__is_batch_normalized:
+            x = self.batch_normalization_2(x)
+
+        return x
+
+    @property
+    def layer_idx(self):
+        return self.__layer_idx
+
+
+class UpConvBlock(keras_layer.Layer):
+    """ Block to build the decoder.
+
+    The decoder is build with the combination of UpSampling2D and Conv2D.
+
+    """
+
+    def __init__(self, layer_idx: int, filter_size: Tuple[int, int], filters: int,
+                 activation: str = 'relu', padding: str = "same",
+                 kernel_initializer: str = "he_normal", **kwargs):
+        super(UpConvBlock, self).__init__(**kwargs)
+
+        self.__layer_idx = layer_idx
+
+        self.up_sampling_1 = keras_layer.UpSampling2D(size=filter_size)
+        self.conv2d_1 = keras_layer.Conv2D(filters, kernel_size=filter_size,
+                                           activation=activation, padding=padding,
+                                           kernel_initializer=kernel_initializer)
+
+    def call(self, inputs, **kwargs):
+        x = inputs
+        x = self.up_sampling_1(x)
+        x = self.conv2d_1(x)
+
+        return x
+
+
+class CropConcatBlock(keras_layer.Layer):
+
+    def call(self, x, down_layer, **kwargs):
+        x1_shape = tf.shape(down_layer)
+        x2_shape = tf.shape(x)
+
+        height_diff = (x1_shape[1] - x2_shape[1]) // 2
+        width_diff = (x1_shape[2] - x2_shape[2]) // 2
+
+        down_layer_cropped = down_layer[:,
+                             height_diff: (x2_shape[1] + height_diff),
+                             width_diff: (x2_shape[2] + width_diff),
+                             :]
+
+        x = tf.concat([down_layer_cropped, x], axis=-1)
+        return x
 
 
 class UNet:
@@ -33,152 +124,6 @@ class UNet:
 
         self.__internal_model = None
         self.__history = None
-
-    def __build_encoder(self, n_filters: int, start_layer, n_blocks: int, name: str = "encode",
-                        dilation_rate: int = 1, initial_block_id: int = 0):
-        """ Build encoder for U-Net.
-
-        The encoder has the form of a traditional CNN. The start layer must be an Input image while
-        the last layer output will an embedded vector coding the information of the image.
-
-        Args:
-            n_filters:
-            start_layer:
-            n_blocks:
-            name:
-            dilation_rate:
-            initial_block_id:
-
-        Returns:
-            encoder (dict): Dictionary containing the layers that defines the model. Each key-value
-                            is a different block of the encoder. Each value is a list containing all
-                            the layers (in order) of that block.
-            block_id (int): Last id used to define a name of a layer.
-        """
-        bn: bool = self.__batch_normalization
-
-        layers = {}
-        prev_layer = start_layer
-        block_id = initial_block_id
-        for i in range(initial_block_id, initial_block_id + n_blocks):
-            block_id = i + 1
-            dict_key = name + "_" + str(block_id)
-            layers[dict_key] = []
-
-            n_filters_layer = n_filters * (2 ** i)
-
-            conv1 = keras_layer.Conv2D(n_filters_layer, (3, 3), activation='relu', padding='same',
-                                       dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                       name=f"conv_{block_id}")(prev_layer)
-            layers[dict_key].append(conv1)
-
-            if bn:
-                conv1 = keras_layer.BatchNormalization(name=f"bn_conv_{block_id}")(conv1)
-                layers[dict_key].append(conv1)
-
-            conv1 = keras_layer.Conv2D(n_filters_layer, (3, 3), activation='relu', padding='same',
-                                       dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                       name=f"conv_{block_id}_{block_id}")(conv1)
-            layers[dict_key].append(conv1)
-
-            if bn:
-                conv1 = keras_layer.BatchNormalization(name=f"bn_conv_{block_id}_{block_id}")(conv1)
-                layers[dict_key].append(conv1)
-
-            if (i + 1) != initial_block_id + n_blocks:
-                pool1 = keras_layer.MaxPooling2D(pool_size=(2, 2), data_format='channels_last',
-                                                 name=f"mp_{block_id}")(conv1)
-                layers[dict_key].append(pool1)
-
-                prev_layer = pool1
-
-        return layers, block_id
-
-    def __build_decoder(self, encoder, filters: List[int], input_layer, name: str = "decode",
-                        dilation_rate: int = 1, initial_block_id: int = 0,
-                        time_distributed: bool = False):
-        """ Build the decoder model.
-
-        The decoder model of the U-Net is build upon the conjunction of UpSampling layers with
-        Conv2D layers. The first ones increase the size of the input using some "shallow" technique.
-        After applying it the Conv2D refines the output. The input of each block is the result of
-        the previous block concatenate it with a feature map of the encoder.
-
-        Args:
-            encoder:
-            filters:
-            name:
-            dilation_rate:
-            initial_block_id:
-
-        Returns:
-
-        """
-        bn: bool = self.__batch_normalization
-
-        layers = {}
-        prev_layer = input_layer
-
-        encoder_layers = list(encoder.values())[:-1]
-        encoder_layers = encoder_layers[::-1]
-        for i, (filter_per_layer, enc_layer) in enumerate(zip(filters, encoder_layers)):
-            block_id: int = initial_block_id + i
-            dict_key = name + "_" + str(block_id)
-
-            layers[dict_key] = []
-
-            if time_distributed:
-                up5 = keras_layer.TimeDistributed(
-                    keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}"))(prev_layer)
-                conv5 = keras_layer.TimeDistributed(
-                    keras_layer.Conv2D(filter_per_layer, (2, 2), activation='relu', padding='same',
-                                       dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                       name=f"conv_{block_id}"))(up5)
-            else:
-                up5 = keras_layer.UpSampling2D(size=(2, 2), name=f"up_{block_id}")(prev_layer)
-                conv5 = keras_layer.Conv2D(filter_per_layer, (2, 2), activation='relu',
-                                           padding='same',
-                                           dilation_rate=dilation_rate,
-                                           kernel_initializer='he_normal',
-                                           name=f"conv_{block_id}")(up5)
-
-            up6 = keras_layer.concatenate([conv5, enc_layer[-2]], name=f"conct_{block_id}", axis=3)
-            layers[dict_key].append(up6)
-
-            if time_distributed:
-                conv6 = keras_layer.TimeDistributed(
-                    keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
-                                       dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                       name=f"conv_{block_id}_{block_id}"))(up6)
-            else:
-                conv6 = keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu',
-                                           padding='same', dilation_rate=dilation_rate,
-                                           kernel_initializer='he_normal',
-                                           name=f"conv_{block_id}_{block_id}")(up6)
-
-            layers[dict_key].append(conv6)
-
-            if bn:
-                conv6 = keras_layer.BatchNormalization(name=f"bn_conv_{block_id}")(conv6)
-                layers[dict_key].append(conv6)
-
-            conv6 = keras_layer.Conv2D(filter_per_layer, (3, 3), activation='relu', padding='same',
-                                       dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                       name=f"conv_{block_id}_{block_id}_{block_id}")(conv6)
-
-            if time_distributed:
-                conv6 = keras_layer.TimeDistributed(conv6)
-            layers[dict_key].append(conv6)
-
-            if bn:
-                conv6 = keras_layer.BatchNormalization(name=f"bn_conv_{block_id}_{block_id}")(conv6)
-                layers[dict_key].append(conv6)
-
-            if time_distributed:
-                conv6 = keras_layer.TimeDistributed(conv6)
-            prev_layer = conv6
-
-        return layers
 
     def __build_cells_regressors(self, start_layer, initial_block_id: int, n_filters: int,
                                  dilation_rate: int):
@@ -248,8 +193,9 @@ class UNet:
 
         return layers, block_id
 
-    def build_unet(self, n_filters=16, dilation_rate: int = 1, n_blocks: int = 5,
-                   last_activation: str = "auto"):
+    def build_unet(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
+                   layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
+                   pool_size: Tuple[int, int] = (2, 2)):
         """ Builds the graph and model for the U-Net.
 
         The U-Net, first introduced by Ronnenberger et al., is an encoder-decoder architecture.
@@ -257,52 +203,40 @@ class UNet:
 
         Args:
             n_filters:
-            dilation_rate:
-            n_blocks:
             last_activation:
+            dilation_rate:
+            layer_depth:
+            kernel_size:
+            pool_size:
+
         """
         # Define input batch shape
         input_image = keras_layer.Input(self.__input_size, name="input_image")
-        encoder, last_block_id = self.__build_encoder(n_filters=n_filters, start_layer=input_image,
-                                                      n_blocks=n_blocks,
-                                                      dilation_rate=dilation_rate)
+        encoder = {}
 
-        if self.__build_regressor:
-            regressor, last_block_id = self.__build_cells_regressors(
-                start_layer=list(encoder.values())[-1][-1],
-                initial_block_id=6,
-                n_filters=n_filters, dilation_rate=dilation_rate)
+        conv_params = dict(filters=n_filters,
+                           kernel_size=kernel_size,
+                           activation='relu',
+                           batch_normalization=True)
 
-        filters_size = [n_filters * (2 ** i) for i in range(0, n_blocks)]
-        filters_size = filters_size[::-1]
+        x = input_image
+        layer_idx = 0
 
-        if self.__time_distributed:
-            inputs_decoder = []
+        for layer_idx in range(0, layer_depth):
+            x = ConvBlock(layer_idx, **conv_params)(x)
+            encoder[layer_idx] = x
+            x = keras_layer.MaxPooling2D(pool_size)(x)
 
-            for bloc in encoder.values():
-                inputs_decoder.append(bloc[-1])
-
-            input_decoder = keras_layer.concatenate(inputs_decoder)
-        else:
-            input_decoder = list(encoder.values())[-1][-1]
-
-        decoder = self.__build_decoder(encoder=encoder, dilation_rate=dilation_rate,
-                                       filters=filters_size, initial_block_id=last_block_id + 1,
-                                       input_layer=input_decoder)
-
-        if last_activation == "auto" and self.__n_channels == 1:
-            last_activation = "sigmoid"
-        elif last_activation == "auto":
-            last_activation = "softmax"
+        for layer_idx in range(layer_idx, -1, -1):
+            x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters, activation='relu')(x)
+            x = CropConcatBlock()(x, encoder[layer_idx])
+            x = ConvBlock(layer_idx, **conv_params)(x)
 
         conv10 = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
-                                    padding='same',
-                                    dilation_rate=dilation_rate, kernel_initializer='he_normal',
-                                    name="img_out")(list(decoder.values())[-1][-1])
+                                    padding='same', dilation_rate=dilation_rate,
+                                    kernel_initializer='he_normal', name="img_out")(x)
 
-        if not self.__build_rpn and self.__build_regressor:
-            model = keras_model.Model(inputs=input_image, outputs=[conv10, regressor[-1]])
-        elif not self.__build_rpn:
+        if not self.__build_rpn:
             model = keras_model.Model(inputs=input_image, outputs=conv10)
         else:
             if config is None:
