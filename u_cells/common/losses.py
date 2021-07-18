@@ -63,7 +63,8 @@ def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tens
     return loss
 
 
-def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5):
+def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5,
+                   mean: bool = True):
     """ Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
     of two batch of data, usually be used for binary image segmentation
     i.e. labels are binary. The coefficient between 0 to 1, 1 means totally match.
@@ -81,6 +82,7 @@ def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=
             dice = ```smooth/(small_value + smooth)``, then if smooth is very small, dice close to
             0 (even the image values lower than the threshold), so in this case, higher smooth
             can have a higher dice.
+        mean (bool):
 
     Returns:
     References:
@@ -97,7 +99,9 @@ def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=
         raise Exception("Unknow loss_type")
 
     dice = (2. * inse + smooth) / (l + r + smooth)
-    dice = tf.reduce_mean(dice, name='dice_coe')
+
+    if mean:
+        dice = tf.reduce_mean(dice, name='dice_coeff')
 
     return 1 - dice
 
