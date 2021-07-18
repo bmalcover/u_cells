@@ -161,7 +161,8 @@ class DataGenerator(KU.Sequence):
     def __init__(self, batch_size: int, steps: int, path: str, shape, output_size: int,
                  multi_type: bool = False, regression: bool = False, region_path: str = None,
                  rgb_input: bool = True, augmentation=None, load_from_cache: bool = False,
-                 do_background: bool = False, unified_batch: bool = False):
+                 do_background: bool = False, unified_batch: bool = False,
+                 binary_output: bool = True):
         if "*" not in path and region_path is None:
             raise Exception("Regions path or a path with global format needed")
 
@@ -177,6 +178,7 @@ class DataGenerator(KU.Sequence):
         self.__load_from_cache = load_from_cache
         self.__augmentation = iaa.Sequential(augmentation)
         self.__do_background = do_background
+        self.__binary_output = binary_output
         self.__unified_batch = unified_batch
 
         if region_path is not None:
@@ -360,14 +362,19 @@ class DataGenerator(KU.Sequence):
             input_img = skimage.transform.resize(input_img, input_shape)
 
             output_size = self.__output_size
-            if self.__do_background:
+            if self.__do_background or self.__binary_output:
                 foreground = np.sum(mask, axis=-1)  # We merge all the channels with info
                 background = np.zeros_like(foreground)
 
                 background[foreground == 0] = 1
-                mask = np.dstack([background, mask])
 
-                output_size += 1
+                if self.__binary_output:
+                    foreground[foreground > 1] = 1
+                    mask = np.dstack([background, foreground])
+                    output_size = 2
+                else:
+                    mask = np.dstack([background, mask])
+                    output_size += 1
 
             if not self.__multi_type:
                 mask = np.sum(mask, axis=-1)
