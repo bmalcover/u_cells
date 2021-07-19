@@ -20,13 +20,12 @@ def rpn_graph(feature_map, anchors_per_location, anchor_stride):
                   applied to anchors.
     """
     # Shared convolutional base of the RPN
-    shared = KL.Conv2D(512, (3, 3), padding='same', activation='relu',
-                       strides=anchor_stride,
+    shared = KL.Conv2D(512, (3, 3), padding='same', activation='relu', strides=anchor_stride,
                        name='rpn_conv_shared')(feature_map)
 
     # Anchor Score. [batch, height, width, anchors per location * 2].
-    x = KL.Conv2D(2 * anchors_per_location, (1, 1), padding='valid',
-                  activation='linear', name='rpn_class_raw')(shared)
+    x = KL.Conv2D(2 * anchors_per_location, (1, 1), padding='valid', activation='linear',
+                  name='rpn_class_raw')(shared)
 
     # Reshape to [batch, anchors, 2]
     rpn_class_logits = KL.Lambda(

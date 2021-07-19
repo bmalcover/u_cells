@@ -223,12 +223,17 @@ class UNet:
         layer_idx = 0
 
         for layer_idx in range(0, layer_depth):
+            conv_params['filters'] = n_filters * (2 ** layer_idx)
+
             x = ConvBlock(layer_idx, **conv_params)(x)
             encoder[layer_idx] = x
             x = keras_layer.MaxPooling2D(pool_size)(x)
 
         for layer_idx in range(layer_idx, -1, -1):
-            x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters, activation='relu')(x)
+            conv_params['filters'] = n_filters * (2 ** layer_idx)
+
+            x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters * (2 ** layer_idx),
+                            activation='relu')(x)
             x = CropConcatBlock()(x, encoder[layer_idx])
             x = ConvBlock(layer_idx, **conv_params)(x)
 
