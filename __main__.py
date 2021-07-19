@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+""" Main script to test multiple library features
+
+This script contains a small demo of the abilities of this library. In particular call to the
+augmentation function and then use the generated data within a Keras generator.
+"""
+
 import imgaug.augmenters as iaa
 import imgaug as ia
 
@@ -47,7 +53,6 @@ def main():
                          './in/bboxes/train/via_region_data.json', to_mask=True,
                          output_shape=(512, 512))
 
-
     train_generator = u_data.DataGenerator(4, 100, '.\\out_aug\\*.png', (512, 512), 100,
                                            augmentation=None, load_from_cache=True,
                                            do_background=True, multi_type=True)
@@ -55,7 +60,6 @@ def main():
     for t, m in train_generator:
         print(type(t))
         break
-
 
 
 if __name__ == '__main__':

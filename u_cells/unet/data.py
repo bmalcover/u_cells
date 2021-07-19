@@ -123,11 +123,16 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
 
         img_aug = skimage.transform.resize(img_aug, (output_shape[0], output_shape[1], 3))
 
+        regions = region_info[name].values()
+        regions_lens = map(lambda x: len(x['shape_attributes']['all_points_x']), regions)
+
+        min_points = []
         last_point = 0
-        for idx_region, region in enumerate(region_info[name].values()):
-            region = region["shape_attributes"]
-            points = points_aug[0][last_point:last_point + len(region['all_points_x']), :].astype(
-                int)
+        for idx_region, region_l in enumerate(regions_lens):
+            points = points_aug[0][last_point:last_point + region_l, :].astype(int)
+            dist_2_origin = list(map(lambda x: np.linalg.norm(x - np.array([0, 0])), points))
+
+            min_points.append(min(dist_2_origin))
 
             if to_mask:
                 mask = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
@@ -141,14 +146,17 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
                     "shape_attributes": {'all_points_x': list(points[:, 0]),
                                          'all_points_y': list(points[:, 1])}}
 
-            last_point += len(region['all_points_x'])
+            last_point += region_l
 
-        out_path = os.path.join(output_folder, str(idx) + ".png")
+        idx_min_points = np.argsort(min_points)
+
+        out_path = os.path.join(output_folder, str(idx).zfill(3) + ".png")
         cv2.imwrite(out_path, img_aug * 255)
 
         if to_mask:
-            with open(os.path.join(output_folder, str(idx) + ".npy"), 'wb+') as f:
+            with open(os.path.join(output_folder, str(idx).zfill(3) + ".npy"), 'wb+') as f:
                 masks = np.dstack(masks)
+                masks = masks[:, :, idx_min_points]
                 np.save(f, np.array(masks))
 
     if not to_mask:
