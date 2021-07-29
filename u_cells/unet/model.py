@@ -13,8 +13,8 @@ import tensorflow.keras.layers as keras_layer
 from tensorflow.keras.optimizers import *
 import tensorflow as tf
 
-from u_cells.common import config
-from u_cells.rpn import model as rpn_model
+from u_cells.u_cells.common import config
+from u_cells.u_cells.rpn import model as rpn_model
 
 
 class ConvBlock(keras_layer.Layer):
@@ -246,10 +246,14 @@ class UNet:
         else:
             if config is None:
                 raise AttributeError("Config for RPN model not defined")
+                
+            input_gt_masks = keras_layer.Input(
+                                        shape=[self.__input_size[0], self.__input_size[1], None],
+                                        name="input_gt_masks")
             # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the
             # decoder.
             rpn = rpn_model.build_rpn_model(depth=n_filters * 16)  # Conv5
-            rpn_output = rpn([list(encoder.values())[-1][-1]])
+            rpn_output = rpn([list(encoder.values())[-1]])
 
             # RPN Output
             rpn_class_logits, rpn_class, rpn_bbox = rpn_output
@@ -272,10 +276,10 @@ class UNet:
 
             mask_loss = keras_layer.Lambda(lambda x: rpn_model.mrcnn_mask_loss_graph(*x),
                                            name="img_out_loss")(
-                [input_image, input_gt_class_ids, conv10])
+                [input_gt_masks, input_gt_class_ids, conv10])
 
             # Input of the model
-            inputs = [input_image, input_rpn_match, input_rpn_bbox, input_gt_class_ids]
+            inputs = [input_image, input_gt_masks, input_rpn_match, input_rpn_bbox, input_gt_class_ids]
 
             # Output of the model
             outputs = [conv10,
@@ -315,9 +319,6 @@ class UNet:
         else:
             loss_names = ["rpn_class_loss", "rpn_bbox_loss", "img_out_loss"]
 
-            self.__internal_model._losses = []
-            self.__internal_model._per_input_losses = {}
-
             for name in loss_names:
                 layer = self.__internal_model.get_layer(name)
                 if check and layer.output in self.__internal_model.losses:
@@ -327,7 +328,7 @@ class UNet:
 
             self.__internal_model.compile(*args, **kwargs,
                                           optimizer=Adam(lr=self.__config.LEARNING_RATE),
-                                          loss=[loss_func, None, None])
+                                         loss=[None] * len(self.__internal_model.outputs))
 
     def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
               validation_steps: int, check_point_path: Union[str, None], callbacks=None, verbose=1,

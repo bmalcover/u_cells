@@ -282,9 +282,9 @@ class DataGenerator(KU.Sequence):
             batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             b += 1
 
-        inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
+        inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
 #         inputs = [batch_images]
-        outputs = []
+        outputs = [np.zeros((4, 512, 512, 100))] + ([np.zeros((10,10))] * 5)
 
         return inputs, outputs
 

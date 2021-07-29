@@ -20,7 +20,7 @@ class Config(ABC):
     # experiment is running.
     NAME = None  # Override in sub-classes
 
-    BATCH_SIZE = 2
+    BATCH_SIZE = 4
 
     # Number of training steps per epoch. This doesn't need to match the size of the training set.
     # Tensorboard updates are saved at the end of each epoch, so setting this to a smaller number

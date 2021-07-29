@@ -42,7 +42,9 @@ def rpn_graph(feature_map, anchors_per_location, anchor_stride):
 
     # Reshape to [batch, anchors, 4]
     rpn_bbox = KL.Lambda(lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 4]))(x)
-
+    
+    print(f"RPN GRAPH: {(rpn_class_logits.shape, rpn_probs.shape, rpn_bbox.shape)}")
+       
     return [rpn_class_logits, rpn_probs, rpn_bbox]
 
 
@@ -94,6 +96,7 @@ def class_loss_graph(rpn_match, rpn_class_logits):
     return loss
 
 
+
 def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     """ Mask binary cross-entropy loss for the masks head.
 
@@ -101,36 +104,38 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
         target_masks [batch, num_rois, height, width]: A float32 tensor of values 0 or 1. Uses zero
                                                        padding to fill array.
         target_class_ids [batch, num_rois]: Integer class IDs. Zero padded.
-        pred_masks [batch, proposals, height, width, num_classes]: float32 tensor with values from 0
+        pred_masks [batch, height, width, num_classes]: float32 tensor with values from 0
                                                                    to 1.
 
     Returns:
 
     """
+    pred_masks = tf.transpose(a=pred_masks, perm=[0, 3, 1, 2])
+    target_masks = tf.transpose(a=target_masks, perm=[0, 3, 1, 2])
+    
     # Reshape for simplicity. Merge first two dimensions into one.
     target_class_ids = K.reshape(target_class_ids, (-1,))
-    mask_shape = tf.shape(target_masks)
+    mask_shape = tf.shape(input=target_masks)
     target_masks = K.reshape(target_masks, (-1, mask_shape[2], mask_shape[3]))
-    pred_shape = tf.shape(pred_masks)
-    pred_masks = K.reshape(pred_masks,
-                           (-1, pred_shape[2], pred_shape[3], pred_shape[4]))
+    pred_masks = K.reshape(pred_masks, (-1, mask_shape[2], mask_shape[3]))
+
     # Permute predicted masks to [N, num_classes, height, width]
-    pred_masks = tf.transpose(pred_masks, [0, 3, 1, 2])
+#     pred_masks = tf.transpose(a=pred_masks, perm=[0, 3, 1, 2])
 
     # Only positive ROIs contribute to the loss. And only
     # the class specific mask of each ROI.
-    positive_ix = tf.where(target_class_ids > 0)[:, 0]
+    positive_ix = tf.compat.v1.where(target_class_ids > 0)[:, 0]
     positive_class_ids = tf.cast(
         tf.gather(target_class_ids, positive_ix), tf.int64)
     indices = tf.stack([positive_ix, positive_class_ids], axis=1)
 
     # Gather the masks (predicted and true) that contribute to loss
     y_true = tf.gather(target_masks, positive_ix)
-    y_pred = tf.gather_nd(pred_masks, indices)
+    y_pred = tf.gather(pred_masks, positive_ix)
 
     # Compute binary cross entropy. If no positive ROIs, then return 0.
     # shape: [batch, roi, num_classes]
-    loss = K.switch(tf.size(y_true) > 0,
+    loss = K.switch(tf.size(input=y_true) > 0,
                     K.binary_crossentropy(target=y_true, output=y_pred),
                     tf.constant(0.0))
     loss = K.mean(loss)
@@ -163,7 +168,7 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
         """
         outputs = []
         for i in range(num_rows):
-            outputs.append(x[i, :counts[i]])
+            outputs.append(x[i, :counts[i]]) # I imatge, counts[i] bboxes
         return tf.concat(outputs, axis=0)
 
     # Positive anchors contribute to the loss, but negative and
@@ -173,15 +178,16 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
 
     # Pick bbox deltas that contribute to the loss
     rpn_bbox = tf.gather_nd(rpn_bbox, indices)
-
+    
+    # print((target_bbox.shape, rpn_match.shape, rpn_bbox.shape))
     # Trim target bounding box deltas to the same length as rpn_bbox.
     batch_counts = K.sum(K.cast(K.equal(rpn_match, 1), tf.int32), axis=1)
-    # IMAGE_PER_GPU = 4 , from the sample
+        
     target_bbox = batch_pack_graph(target_bbox, batch_counts, 4)
 
     loss = smooth_l1_loss(target_bbox, rpn_bbox)
-
     loss = K.switch(tf.size(input=loss) > 0, K.mean(loss), tf.constant(0.0))
+    
     return loss
 
 
