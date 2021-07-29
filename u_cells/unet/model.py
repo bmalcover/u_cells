@@ -92,6 +92,7 @@ class UpConvBlock(keras_layer.Layer):
 
 class CropConcatBlock(keras_layer.Layer):
 
+    @tf.autograph.experimental.do_not_convert
     def call(self, x, down_layer, **kwargs):
         x1_shape = tf.shape(down_layer)
         x2_shape = tf.shape(x)
@@ -246,10 +247,10 @@ class UNet:
         else:
             if config is None:
                 raise AttributeError("Config for RPN model not defined")
-                
+
             input_gt_masks = keras_layer.Input(
-                                        shape=[self.__input_size[0], self.__input_size[1], None],
-                                        name="input_gt_masks")
+                shape=[self.__input_size[0], self.__input_size[1], None],
+                name="input_gt_masks")
             # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the
             # decoder.
             rpn = rpn_model.build_rpn_model(depth=n_filters * 16)  # Conv5
@@ -279,7 +280,8 @@ class UNet:
                 [input_gt_masks, input_gt_class_ids, conv10])
 
             # Input of the model
-            inputs = [input_image, input_gt_masks, input_rpn_match, input_rpn_bbox, input_gt_class_ids]
+            inputs = [input_image, input_gt_masks, input_rpn_match, input_rpn_bbox,
+                      input_gt_class_ids]
 
             # Output of the model
             outputs = [conv10,
@@ -328,7 +330,7 @@ class UNet:
 
             self.__internal_model.compile(*args, **kwargs,
                                           optimizer=Adam(lr=self.__config.LEARNING_RATE),
-                                         loss=[None] * len(self.__internal_model.outputs))
+                                          loss=[None] * len(self.__internal_model.outputs))
 
     def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
               validation_steps: int, check_point_path: Union[str, None], callbacks=None, verbose=1,
@@ -346,6 +348,7 @@ class UNet:
             validation_steps:
             check_point_path:
             callbacks:
+            verbose:
 
         Returns:
 
@@ -394,3 +397,10 @@ class UNet:
 
     def predict(self, *args, **kwargs):
         return self.__internal_model.predict(*args, **kwargs)
+
+    def __str__(self):
+        output = None
+        if self.__internal_model is not None:
+            output = self.__internal_model.summary()
+
+        return output
