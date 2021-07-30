@@ -7,6 +7,7 @@ proposed by Ronnenberger et al. and is based on a Encoder-Decoder architecture.
 
 from typing import Callable, Union, Tuple
 import warnings
+import enum
 
 import tensorflow.keras.models as keras_model
 import tensorflow.keras.layers as keras_layer
@@ -109,10 +110,18 @@ class CropConcatBlock(keras_layer.Layer):
         return x
 
 
+class NeuralMode(enum.Enum):
+    """ Mode for the Neural Network.
+
+    """
+    INFERENCE = 0
+    TRAIN = 1
+
+
 class UNet:
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]], out_channel: int,
                  batch_normalization: bool, config_net: config.Config = None, rpn: bool = False,
-                 regressor: bool = False, time_distributed: bool = False):
+                 mode: NeuralMode = NeuralMode.TRAIN):
 
         self.__input_size: Tuple[int, int, int] = input_size
         self.__batch_normalization: bool = batch_normalization
@@ -120,79 +129,10 @@ class UNet:
         self.__config = config_net
 
         self.__build_rpn: bool = rpn
-        self.__build_regressor: bool = regressor
-        self.__time_distributed: bool = time_distributed
+        self.__mode: NeuralMode = mode
 
         self.__internal_model = None
         self.__history = None
-
-    def __build_cells_regressors(self, start_layer, initial_block_id: int, n_filters: int,
-                                 dilation_rate: int):
-        """ Builds the regressor task.
-
-        This branch of the neural network is an addition to the original U-Net architecture. The
-        main goal of this branch is to obtain the number of cells on an image. To do so is based on
-        the regression principles, using  special kind of loss function to do it.
-
-        Args:
-            start_layer:
-            initial_block_id:
-            n_filters:
-            dilation_rate:
-
-        Returns:
-
-        """
-        layers = []
-        last_layer = start_layer
-
-        block_id = initial_block_id + 1
-        last_layer = keras_layer.Conv2D(n_filters * (2 ** 3), (3, 3), dilation_rate=dilation_rate,
-                                        activation='relu',
-                                        padding='same',
-                                        kernel_initializer='he_normal', name=f"conv_{block_id}")(
-            last_layer)
-        layers.append(last_layer)
-
-        last_layer = keras_layer.Conv2D(n_filters * (2 ** 3), (3, 3), dilation_rate=dilation_rate,
-                                        activation='relu',
-                                        padding='same',
-                                        kernel_initializer='he_normal',
-                                        name=f"conv_{block_id}_{block_id}")(last_layer)
-        layers.append(last_layer)
-
-        last_layer = keras_layer.MaxPooling2D(pool_size=(2, 2), data_format='channels_last',
-                                              name=f"mp_{block_id}")(last_layer)
-        layers.append(last_layer)
-
-        block_id = initial_block_id + 2
-        last_layer = keras_layer.Conv2D(n_filters * (2 ** 4), (3, 3), dilation_rate=dilation_rate,
-                                        activation='relu',
-                                        padding='same',
-                                        kernel_initializer='he_normal',
-                                        name=f"conv_{block_id}")(last_layer)
-        layers.append(last_layer)
-
-        last_layer = keras_layer.Conv2D(n_filters * (2 ** 4), (3, 3), dilation_rate=dilation_rate,
-                                        activation='relu',
-                                        padding='same',
-                                        kernel_initializer='he_normal',
-                                        name=f"conv_{block_id}_{block_id}")(last_layer)
-        layers.append(last_layer)
-
-        last_layer = keras_layer.Flatten()(last_layer)
-        layers.append(last_layer)
-
-        last_layer = keras_layer.Dense(1024, name="dense_1")(last_layer)
-        layers.append(last_layer)
-
-        last_layer = keras_layer.Dense(1024, name="dense_2")(last_layer)
-        layers.append(last_layer)
-
-        last_layer = keras_layer.Dense(1, name="regressor_output")(last_layer)
-        layers.append(last_layer)
-
-        return layers, block_id
 
     def build_unet(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
                    layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
@@ -259,37 +199,44 @@ class UNet:
             # RPN Output
             rpn_class_logits, rpn_class, rpn_bbox = rpn_output
 
-            # RPN GT
-            input_rpn_match = keras_layer.Input(shape=[None, 1], name="input_rpn_match",
-                                                dtype=tf.int32)
-            input_rpn_bbox = keras_layer.Input(shape=[None, 4], name="input_rpn_bbox",
-                                               dtype=tf.float32)
-            input_gt_class_ids = keras_layer.Input(shape=[None], name="input_gt_class_ids",
-                                                   dtype=tf.int32)
+            if self.__mode is NeuralMode.TRAIN:
+                # RPN GT
+                input_rpn_match = keras_layer.Input(shape=[None, 1], name="input_rpn_match",
+                                                    dtype=tf.int32)
+                input_rpn_bbox = keras_layer.Input(shape=[None, 4], name="input_rpn_bbox",
+                                                   dtype=tf.float32)
+                input_gt_class_ids = keras_layer.Input(shape=[None], name="input_gt_class_ids",
+                                                       dtype=tf.int32)
 
-            # RPN Loss
-            rpn_class_loss = keras_layer.Lambda(lambda x: rpn_model.class_loss_graph(*x),
-                                                name="rpn_class_loss")(
-                [input_rpn_match, rpn_class_logits])
-            rpn_bbox_loss = keras_layer.Lambda(lambda x: rpn_model.bbox_loss_graph(*x),
-                                               name="rpn_bbox_loss")(
-                [input_rpn_bbox, input_rpn_match, rpn_bbox])
+                # RPN Loss
+                rpn_class_loss = keras_layer.Lambda(lambda x: rpn_model.class_loss_graph(*x),
+                                                    name="rpn_class_loss")(
+                    [input_rpn_match, rpn_class_logits])
+                rpn_bbox_loss = keras_layer.Lambda(lambda x: rpn_model.bbox_loss_graph(*x),
+                                                   name="rpn_bbox_loss")(
+                    [input_rpn_bbox, input_rpn_match, rpn_bbox])
 
-            mask_loss = keras_layer.Lambda(lambda x: rpn_model.mrcnn_mask_loss_graph(*x),
-                                           name="img_out_loss")(
-                [input_gt_masks, input_gt_class_ids, conv10])
+                mask_loss = keras_layer.Lambda(lambda x: rpn_model.mrcnn_mask_loss_graph(*x),
+                                               name="img_out_loss")(
+                    [input_gt_masks, input_gt_class_ids, conv10])
 
-            # Input of the model
-            inputs = [input_image, input_gt_masks, input_rpn_match, input_rpn_bbox,
-                      input_gt_class_ids]
+                # Input of the model
+                inputs = [input_image, input_gt_masks, input_rpn_match, input_rpn_bbox,
+                          input_gt_class_ids]
 
-            # Output of the model
-            outputs = [conv10,
-                       mask_loss,
-                       rpn_class,
-                       rpn_bbox,
-                       rpn_class_loss,
-                       rpn_bbox_loss]
+                # Output of the model
+                outputs = [conv10,
+                           mask_loss,
+                           rpn_class,
+                           rpn_bbox,
+                           rpn_class_loss,
+                           rpn_bbox_loss]
+
+            else:
+                # Create masks for detections
+
+                inputs = [input_image]
+                outputs = [conv10, rpn_class, rpn_bbox]
 
             model = keras_model.Model(inputs=inputs, outputs=outputs, name='r-unet')
 
@@ -312,9 +259,6 @@ class UNet:
         """
         if not self.__build_rpn:
             loss_functions = {"img_out": loss_func}
-
-            if self.__build_regressor:
-                loss_functions['regressor_output'] = 'mean_absolute_error'
 
             self.__internal_model.compile(*args, **kwargs, optimizer=Adam(lr=learning_rate),
                                           loss=loss_functions, metrics=['categorical_accuracy'])
@@ -353,39 +297,42 @@ class UNet:
         Returns:
 
         """
+        if self.__build_rpn and self.__mode is not NeuralMode.TRAIN:
+            raise ValueError(
+                f"Mode of the Neural network incorrect: instead of train the mode is {self.__mode}")
+
         if self.__history is not None:
             warnings.warn("Model already trained, starting new training")
 
         if self.__build_rpn:
-            history = self.__internal_model.fit(train_generator, epochs=epochs,
-                                                verbose=verbose,
-                                                steps_per_epoch=self.__config.STEPS_PER_EPOCH,
-                                                callbacks=callbacks, validation_data=val_generator,
-                                                validation_steps=self.__config.VALIDATION_STEPS,
-                                                *args, **kwargs)
+            steps_per_epoch = self.__config.STEPS_PER_EPOCH
+            validation_steps = self.__config.VALIDATION_STEPS
+
+        if callbacks is None:
+            callbacks = []
+
+        if check_point_path is not None:
+            callbacks.append(tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
+                                                                save_weights_only=False,
+                                                                save_best_only=True))
+
+        if val_generator is not None:
+            history = self.__internal_model.fit(train_generator, validation_data=val_generator,
+                                                epochs=epochs,
+                                                validation_steps=validation_steps,
+                                                callbacks=callbacks,
+                                                steps_per_epoch=steps_per_epoch,
+                                                verbose=verbose, *args, **kwargs)
         else:
-            if callbacks is None:
-                callbacks = []
+            history = self.__internal_model.fit(train_generator, epochs=epochs,
+                                                callbacks=callbacks, verbose=verbose,
+                                                steps_per_epoch=steps_per_epoch, *args,
+                                                **kwargs)
 
-            if check_point_path is not None:
-                callbacks.append(
-                    tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
-                                                       save_weights_only=False,
-                                                       save_best_only=True))
-
-            if val_generator is not None:
-                history = self.__internal_model.fit(train_generator, validation_data=val_generator,
-                                                    epochs=epochs,
-                                                    validation_steps=validation_steps,
-                                                    callbacks=callbacks,
-                                                    steps_per_epoch=steps_per_epoch,
-                                                    verbose=verbose, *args, **kwargs)
-            else:
-                history = self.__internal_model.fit(train_generator, epochs=epochs,
-                                                    callbacks=callbacks, verbose=verbose,
-                                                    steps_per_epoch=steps_per_epoch, *args,
-                                                    **kwargs)
         self.__history = history
+
+    def load_weight(self, path: str):
+        self.__internal_model.load_weights(path)
 
     @property
     def model(self):
