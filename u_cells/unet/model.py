@@ -28,10 +28,13 @@ class ConvBlock(keras_layer.Layer):
                  batch_normalization: bool = False, **kwargs):
         super(ConvBlock, self).__init__(**kwargs)
 
-        self.__layer_idx = layer_idx
-        self.__is_batch_normalized = batch_normalization
+        self.__layer_idx: int = layer_idx
+        self.__filters: int = filters
         self.__kernel_size = kernel_size
-        self.__activation = activation
+        self.__activation: str = activation
+        self.__kernel_initializer: str = kernel_initializer
+        self.__padding: str = padding
+        self.__is_batch_normalized: bool = batch_normalization
 
         self.conv2d_1 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
                                            kernel_initializer=kernel_initializer, padding=padding,
@@ -44,6 +47,19 @@ class ConvBlock(keras_layer.Layer):
                                            kernel_initializer=kernel_initializer, padding=padding,
                                            activation=activation)
         self.batch_normalization_2 = keras_layer.BatchNormalization()
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'layer_idx': self.__layer_idx,
+            'filters': self.__filters,
+            'kernel_size': self.__kernel_size,
+            'activation': self.__activation,
+            'kernel_initializer': self.__kernel_initializer,
+            'padding': self.__padding,
+            'batch_normalization': self.__is_batch_normalized
+        })
+        return config
 
     def call(self, inputs, training=None, **kwargs):
         x = inputs
@@ -77,6 +93,11 @@ class UpConvBlock(keras_layer.Layer):
         super(UpConvBlock, self).__init__(**kwargs)
 
         self.__layer_idx = layer_idx
+        self.__filter_size = filter_size
+        self.__filters = filters
+        self.__activation = activation
+        self.__padding = padding
+        self.__kernel_initializer = kernel_initializer
 
         self.up_sampling_1 = keras_layer.UpSampling2D(size=filter_size)
         self.conv2d_1 = keras_layer.Conv2D(filters, kernel_size=filter_size,
@@ -89,6 +110,18 @@ class UpConvBlock(keras_layer.Layer):
         x = self.conv2d_1(x)
 
         return x
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'layer_idx': self.__layer_idx,
+            'filter_size': self.__filter_size,
+            'filters': self.__filters,
+            'activation': self.__activation,
+            'padding': self.__padding,
+            'kernel_initializer': self.__kernel_initializer,
+        })
+        return config
 
 
 class CropConcatBlock(keras_layer.Layer):
