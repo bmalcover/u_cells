@@ -379,8 +379,8 @@ class UNet:
         return self.__internal_model.predict(*args, **kwargs)
 
     def __str__(self):
-        output = None
+        output = ""
         if self.__internal_model is not None:
-            output = self.__internal_model.summary()
+            output = self.__internal_model.summary(print_function=lambda x: x)
 
         return output
