@@ -134,10 +134,8 @@ class CropConcatBlock(keras_layer.Layer):
         height_diff = (x1_shape[1] - x2_shape[1]) // 2
         width_diff = (x1_shape[2] - x2_shape[2]) // 2
 
-        down_layer_cropped = down_layer[:,
-                             height_diff: (x2_shape[1] + height_diff),
-                             width_diff: (x2_shape[2] + width_diff),
-                             :]
+        down_layer_cropped = down_layer[:, height_diff: (x2_shape[1] + height_diff),
+                                        width_diff: (x2_shape[2] + width_diff), :]
 
         x = tf.concat([down_layer_cropped, x], axis=-1)
         return x
@@ -375,8 +373,44 @@ class UNet:
     def history(self):
         return self.__history
 
-    def predict(self, *args, **kwargs):
-        return self.__internal_model.predict(*args, **kwargs)
+    def predict(self, raw=False, *args, **kwargs):
+        """ Infer the value from the Model.
+
+        When the model is the vanilla U-Net this method wrapper the original predict method of the
+        keras model. In the case of U-Net + RPN (and if the raw parameters is set to False), the
+        results are filtered depending on the value of the objectevness. This filter is a minimum
+        threshold defined on the config object.
+
+        Args:
+            raw (bool): Flag, only applicable 
+            *args:
+            **kwargs:
+
+        Returns:
+
+        """
+        if self.__build_rpn and not raw:
+            if self.__mode is NeuralMode.TRAIN:
+                raise EnvironmentError(
+                    "When U-Net is combined with RPN must be in predict state to be able to make "
+                    "predictions")
+            else:
+                pred_threshold = self.__config.PRED_THRESHOLD
+                raw_prediction = self.__internal_model.predict(*args, **kwargs)
+
+                prediction = []
+
+                # Iteration for each batch element
+                for batch_prediction in raw_prediction:
+                    mask, cls, bboxes = batch_prediction
+
+                    # Iterating each bounding box
+                    prediction = prediction + [[m, bb] for m, c, bb in zip(mask, cls, bboxes) if
+                                               cls > pred_threshold]
+        else:
+            prediction = self.__internal_model.predict(*args, **kwargs)
+
+        return prediction
 
     def __str__(self):
         output = ""
