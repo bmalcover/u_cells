@@ -1,210 +1,274 @@
-import tensorflow.keras.models as KM
-import tensorflow.keras.backend as K
-import tensorflow.keras.layers as KL
+# -*- coding: utf-8 -*-
+""" Module containing all RPN classes and methods.
+
+First proposed by Ren et al. a Region Proposal Network (RPN) takes an image (of any size) as input
+and outputs a set of rectangular object proposals, each with an objectness score. This model is
+processed with a fully-convolutional network.
+
+"""
+from typing import Tuple, Union
+import warnings
+import enum
+
+import tensorflow.keras.models as keras_model
+import tensorflow.keras.layers as keras_layer
+import tensorflow.keras.optimizers as keras_opt
 import tensorflow as tf
 
-
-def rpn_graph(feature_map, anchors_per_location, anchor_stride):
-    """Builds the computation graph of Region Proposal Network.
-
-    feature_map: backbone features [batch, height, width, depth]
-    anchors_per_location: number of anchors per pixel in the feature map
-    anchor_stride: Controls the density of anchors. Typically 1 (anchors for
-                   every pixel in the feature map), or 2 (every other pixel).
-
-    Returns:
-        rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before
-                          softmax)
-        rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
-        rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
-                  applied to anchors.
-    """
-    # Shared convolutional base of the RPN
-    shared = KL.Conv2D(512, (3, 3), padding='same', activation='relu', strides=anchor_stride,
-                       name='rpn_conv_shared')(feature_map)
-
-    # Anchor Score. [batch, height, width, anchors per location * 2].
-    x = KL.Conv2D(2 * anchors_per_location, (1, 1), padding='valid', activation='linear',
-                  name='rpn_class_raw')(shared)
-
-    # Reshape to [batch, anchors, 2]
-    rpn_class_logits = KL.Lambda(
-        lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 2]))(x)
-
-    # Softmax on last dimension of BG/FG.
-    rpn_probs = KL.Activation(
-        "softmax", name="rpn_class_xxx")(rpn_class_logits)
-
-    # Bounding box refinement. [batch, H, W, anchors per location * depth]
-    # where depth is [x, y, log(w), log(h)]
-    x = KL.Conv2D(anchors_per_location * 4, (1, 1), padding="valid",
-                  activation='linear', name='rpn_bbox_pred')(shared)
-
-    # Reshape to [batch, anchors, 4]
-    rpn_bbox = KL.Lambda(lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 4]))(x)
-    
-    print(f"RPN GRAPH: {(rpn_class_logits.shape, rpn_probs.shape, rpn_bbox.shape)}")
-       
-    return [rpn_class_logits, rpn_probs, rpn_bbox]
+from u_cells.common import losses as own_losses
 
 
-def build_rpn_model(anchor_stride=1, anchors_per_location=3, depth=256):
-    """Builds a Keras model of the Region Proposal Network.
-    It wraps the RPN graph so it can be used multiple times with shared
-    weights.
-    
-    Args:
-        anchors_per_location: number of anchors per pixel in the feature map
-        anchor_stride: Controls the density of anchors. Typically 1 (anchors for
-                       every pixel in the feature map), or 2 (every other pixel).
-        depth: Depth of the backbone feature map.
-    
-    Returns:
-        rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
-        rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
-        rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
-                  applied to anchors.
-    """
-    input_feature_map = KL.Input(shape=[None, None, depth], name="input_rpn_feature_map")
-    outputs = rpn_graph(input_feature_map, anchors_per_location, anchor_stride)
-    return KM.Model([input_feature_map], outputs, name="rpn_model")
-
-
-def class_loss_graph(rpn_match, rpn_class_logits):
-    """ RPN anchor classifier loss.
-    
-    Args:
-        rpn_match: [batch, anchors, 1]. Anchor match type. 1=positive,
-               -1=negative, 0=neutral anchor.
-        rpn_class_logits: [batch, anchors, 2]. RPN classifier logits for BG/FG.
-    """
-    # Squeeze last dim to simplify
-    rpn_match = tf.squeeze(rpn_match, -1)
-    # Get anchor classes. Convert the -1/+1 match to 0/1 values.
-    anchor_class = K.cast(K.equal(rpn_match, 1), tf.int32)
-    # Positive and Negative anchors contribute to the loss,
-    # but neutral anchors (match value = 0) don't.
-    indices = tf.compat.v1.where(K.not_equal(rpn_match, 0))
-    # Pick rows that contribute to the loss and filter out the rest.
-    rpn_class_logits = tf.gather_nd(rpn_class_logits, indices)
-    anchor_class = tf.gather_nd(anchor_class, indices)
-    # Cross entropy loss
-    loss = K.sparse_categorical_crossentropy(target=anchor_class,
-                                             output=rpn_class_logits,
-                                             from_logits=True)
-    loss = K.switch(tf.size(input=loss) > 0, K.mean(loss), tf.constant(0.0))
-    return loss
-
-
-
-def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
-    """ Mask binary cross-entropy loss for the masks head.
-
-    Args:
-        target_masks [batch, num_rois, height, width]: A float32 tensor of values 0 or 1. Uses zero
-                                                       padding to fill array.
-        target_class_ids [batch, num_rois]: Integer class IDs. Zero padded.
-        pred_masks [batch, height, width, num_classes]: float32 tensor with values from 0
-                                                                   to 1.
-
-    Returns:
+class NeuralMode(enum.Enum):
+    """ Mode for the Neural Network.
 
     """
-    pred_masks = tf.transpose(a=pred_masks, perm=[0, 3, 1, 2])
-    target_masks = tf.transpose(a=target_masks, perm=[0, 3, 1, 2])
-    
-    # Reshape for simplicity. Merge first two dimensions into one.
-    target_class_ids = K.reshape(target_class_ids, (-1,))
-    mask_shape = tf.shape(input=target_masks)
-    target_masks = K.reshape(target_masks, (-1, mask_shape[2], mask_shape[3]))
-    pred_masks = K.reshape(pred_masks, (-1, mask_shape[2], mask_shape[3]))
-
-    # Permute predicted masks to [N, num_classes, height, width]
-#     pred_masks = tf.transpose(a=pred_masks, perm=[0, 3, 1, 2])
-
-    # Only positive ROIs contribute to the loss. And only
-    # the class specific mask of each ROI.
-    positive_ix = tf.compat.v1.where(target_class_ids > 0)[:, 0]
-    positive_class_ids = tf.cast(
-        tf.gather(target_class_ids, positive_ix), tf.int64)
-    indices = tf.stack([positive_ix, positive_class_ids], axis=1)
-
-    # Gather the masks (predicted and true) that contribute to loss
-    y_true = tf.gather(target_masks, positive_ix)
-    y_pred = tf.gather(pred_masks, positive_ix)
-
-    # Compute binary cross entropy. If no positive ROIs, then return 0.
-    # shape: [batch, roi, num_classes]
-    loss = K.switch(tf.size(input=y_true) > 0,
-                    K.binary_crossentropy(target=y_true, output=y_pred),
-                    tf.constant(0.0))
-    loss = K.mean(loss)
-    return loss
+    INFERENCE = 0
+    TRAIN = 1
 
 
-def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
-    """
+class RPN:
 
-    Args:
-        target_bbox: [batch, max positive anchors, (dy, dx, log(dh), log(dw))]. Uses 0 padding to
-                    fill in unsed bbox deltas.
-        rpn_match: [batch, anchors, 1]. Anchor match type. 1=pos, -1=neg, 0=neutral anchor.
-        rpn_bbox: [batch, anchors, (dy, dx, log(dh), log(dw))]
+    def __init__(self, mode: NeuralMode, input_size: Tuple[int, int, int], feature_layer,
+                 feature_depth: Union[int, float], mask_output, img_input, config):
+        self.__config = config
+        self.__input_size: Tuple[int, int, int] = input_size
 
-    Returns:
+        self.__feature_depth: int = feature_depth
+        self.__feature_layer = feature_layer
+        self.__mask_output = mask_output
+        self.__img_input = img_input
+        self.__mode = mode
 
-    """
+        self.__internal_model = None
+        self.__history = None
 
-    def batch_pack_graph(x, counts, num_rows):
-        """ Picks different number of values from each row in x depending on the values in counts.
+    @staticmethod
+    def __rpn_graph(feature_map, anchors_per_location, anchor_stride):
+        """Builds the computation graph of Region Proposal Network.
 
         Args:
-            x:
-            counts:
-            num_rows:
+            feature_map: backbone features [batch, height, width, depth]
+            anchors_per_location: number of anchors per pixel in the feature map
+            anchor_stride: Controls the density of anchors. Typically 1 (anchors for each pixel in
+                           the feature map), or 2 (every other pixel).
+
+        Returns:
+            rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits
+                              (before softmax)
+            rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
+            rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
+                      applied to anchors.
+        """
+        # Shared convolutional base of the RPN
+        shared = keras_layer.Conv2D(512, (3, 3), padding='same', activation='relu',
+                                    strides=anchor_stride, name='rpn_conv_shared')(feature_map)
+
+        # Anchor Score. [batch, height, width, anchors per location * 2].
+        x = keras_layer.Conv2D(2 * anchors_per_location, (1, 1), padding='valid',
+                               activation='linear',
+                               name='rpn_class_raw')(shared)
+
+        # Reshape to [batch, anchors, 2]
+        rpn_class_logits = keras_layer.Lambda(
+            lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 2]))(x)
+
+        # Softmax on last dimension of BG/FG.
+        rpn_probs = keras_layer.Activation(
+            "softmax", name="rpn_class_xxx")(rpn_class_logits)
+
+        # Bounding box refinement. [batch, H, W, anchors per location * depth]
+        # where depth is [x, y, log(w), log(h)]
+        x = keras_layer.Conv2D(anchors_per_location * 4, (1, 1), padding="valid",
+                               activation='linear', name='rpn_bbox_pred')(shared)
+
+        # Reshape to [batch, anchors, 4]
+        rpn_bbox = keras_layer.Lambda(lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 4]))(x)
+
+        return [rpn_class_logits, rpn_probs, rpn_bbox]
+
+    @staticmethod
+    def __build_rpn_model(anchor_stride=1, anchors_per_location=3, depth=256):
+        """ Builds a Keras model of the Region Proposal Network.
+        It wraps the RPN graph so it can be used multiple times with shared
+        weights.
+
+        Args:
+            anchors_per_location: number of anchors per pixel in the feature map
+            anchor_stride: Controls the density of anchors. Typically 1 (anchors for
+                           every pixel in the feature map), or 2 (every other pixel).
+            depth: Depth of the backbone feature map.
+
+        Returns:
+            rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits
+                             (before softmax)
+            rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
+            rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
+                      applied to anchors.
+        """
+        input_feature_map = keras_layer.Input(shape=[None, None, depth],
+                                              name="input_rpn_feature_map")
+        outputs = RPN.__rpn_graph(input_feature_map, anchors_per_location, anchor_stride)
+
+        return keras_model.Model([input_feature_map], outputs, name="rpn_model")
+
+    def __build_model(self):
+        input_gt_masks = keras_layer.Input(
+            shape=[self.__input_size[0], self.__input_size[1], None], name="input_gt_masks")
+
+        # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the decoder.
+        rpn = RPN.__build_rpn_model(depth=self.__feature_depth)  # Conv5
+        rpn_output = rpn([self.__feature_layer])
+
+        # RPN Output
+        rpn_class_logits, rpn_class, rpn_bbox = rpn_output
+
+        if self.__mode is NeuralMode.TRAIN:
+            # RPN GT
+            input_rpn_match = keras_layer.Input(shape=[None, 1], name="input_rpn_match",
+                                                dtype=tf.int32)
+            input_rpn_bbox = keras_layer.Input(shape=[None, 4], name="input_rpn_bbox",
+                                               dtype=tf.float32)
+            input_gt_class_ids = keras_layer.Input(shape=[None], name="input_gt_class_ids",
+                                                   dtype=tf.int32)
+
+            # RPN Loss
+            rpn_class_loss = keras_layer.Lambda(lambda x: own_losses.class_loss_graph(*x),
+                                                name="rpn_class_loss")(
+                [input_rpn_match, rpn_class_logits])
+            rpn_bbox_loss = keras_layer.Lambda(lambda x: own_losses.bbox_loss_graph(*x),
+                                               name="rpn_bbox_loss")(
+                [input_rpn_bbox, input_rpn_match, rpn_bbox])
+
+            mask_loss = keras_layer.Lambda(lambda x: own_losses.mrcnn_mask_loss_graph(*x),
+                                           name="img_out_loss")(
+                [input_gt_masks, input_gt_class_ids, self.__mask_output])
+
+            # Input of the model
+            inputs = [self.__img_input, input_gt_masks, input_rpn_match, input_rpn_bbox,
+                      input_gt_class_ids]
+
+            # Output of the model
+            outputs = [self.__mask_output,
+                       mask_loss,
+                       rpn_class,
+                       rpn_bbox,
+                       rpn_class_loss,
+                       rpn_bbox_loss]
+
+        else:
+            # Create masks for detections
+            inputs = [self.__img_input]
+            outputs = [self.__mask_output, rpn_class, rpn_bbox]
+
+        self.__internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
+
+    def compile(self, *args, **kwargs):
+        """ Compiles the models.
+
+        This function has two behaviors depending on the inclusion of the RPN. In the case of
+        vanilla U-Net this function works as wrapper for the keras.model compile method.
+
+        Args:
+            None
+        Returns:
+            None
+        """
+        loss_names = ["rpn_class_loss", "rpn_bbox_loss", "img_out_loss"]
+
+        for name in loss_names:
+            layer = self.__internal_model.get_layer(name)
+            loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
+            self.__internal_model.add_loss(loss)
+
+        self.__internal_model.compile(*args, **kwargs,
+                                      optimizer=keras_opt.Adam(lr=self.__config.LEARNING_RATE),
+                                      loss=[None] * len(self.__internal_model.outputs))
+
+    def train(self, train_generator, val_generator, epochs: int, check_point_path: Union[str, None],
+              callbacks=None, verbose=1, *args, **kwargs):
+        """ Trains the model with the info passed as parameters.
+
+        The keras model is trained with the information passed as parameters. The info is defined
+        on Config class or instead passed as parameters.
+
+        Args:
+            train_generator:
+            val_generator:
+            epochs (int):
+            check_point_path (str):
+            callbacks:
+            verbose (int):
 
         Returns:
 
         """
-        outputs = []
-        for i in range(num_rows):
-            outputs.append(x[i, :counts[i]]) # I imatge, counts[i] bboxes
-        return tf.concat(outputs, axis=0)
+        if self.__mode is not NeuralMode.TRAIN:
+            raise ValueError(
+                f"Mode of the Neural network incorrect: instead of train the mode is {self.__mode}")
 
-    # Positive anchors contribute to the loss, but negative and
-    # neutral anchors (match value of 0 or -1) don't.
-    rpn_match = K.squeeze(rpn_match, -1)
-    indices = tf.compat.v1.where(K.equal(rpn_match, 1))
+        if self.__history is not None:
+            warnings.warn("Model already trained, starting new training")
 
-    # Pick bbox deltas that contribute to the loss
-    rpn_bbox = tf.gather_nd(rpn_bbox, indices)
-    
-    # print((target_bbox.shape, rpn_match.shape, rpn_bbox.shape))
-    # Trim target bounding box deltas to the same length as rpn_bbox.
-    batch_counts = K.sum(K.cast(K.equal(rpn_match, 1), tf.int32), axis=1)
-        
-    target_bbox = batch_pack_graph(target_bbox, batch_counts, 4)
+        steps_per_epoch = self.__config.STEPS_PER_EPOCH
+        validation_steps = self.__config.VALIDATION_STEPS
 
-    loss = smooth_l1_loss(target_bbox, rpn_bbox)
-    loss = K.switch(tf.size(input=loss) > 0, K.mean(loss), tf.constant(0.0))
-    
-    return loss
+        if callbacks is None:
+            callbacks = []
 
+        if check_point_path is not None:
+            callbacks.append(tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
+                                                                save_weights_only=False,
+                                                                save_best_only=True))
 
-def smooth_l1_loss(y_true, y_pred):
-    """ Implements Smooth-L1 loss.
+        if val_generator is not None:
+            history = self.__internal_model.fit(train_generator, validation_data=val_generator,
+                                                epochs=epochs,
+                                                validation_steps=validation_steps,
+                                                callbacks=callbacks,
+                                                steps_per_epoch=steps_per_epoch,
+                                                verbose=verbose, *args, **kwargs)
+        else:
+            history = self.__internal_model.fit(train_generator, epochs=epochs,
+                                                callbacks=callbacks, verbose=verbose,
+                                                steps_per_epoch=steps_per_epoch, *args,
+                                                **kwargs)
 
-    y_true and y_pred are typically: [N, 4], but could be any shape.
+        self.__history = history
 
-    Args:
-        y_true:
-        y_pred:
+    def predict(self, *args, **kwargs):
+        """ Infer the value from the Model.
 
-    Returns:
+        When the model is the vanilla U-Net this method wrapper the original predict method of the
+        keras model. In the case of U-Net + RPN (and if the raw parameters is set to False), the
+        results are filtered depending on the value of the objectevness. This filter is a minimum
+        threshold defined on the config object.
 
-    """
-    diff = K.abs(y_true - y_pred)
-    less_than_one = K.cast(K.less(diff, 1.0), "float32")
-    loss = (less_than_one * 0.5 * diff ** 2) + (1 - less_than_one) * (diff - 0.5)
+        Args:
+            *args:
+            **kwargs:
 
-    return loss
+        Returns:
+
+        """
+        if self.__mode is NeuralMode.TRAIN:
+            raise EnvironmentError(
+                "When U-Net is combined with RPN must be in predict state to be able to make "
+                "predictions")
+
+        pred_threshold = self.__config.PRED_THRESHOLD
+        raw_prediction = self.__internal_model.predict(*args, **kwargs)
+
+        prediction = []
+
+        # Iteration for each batch element
+        for batch_prediction in raw_prediction:
+            mask, cls, bboxes = batch_prediction
+
+            # Iterating each bounding box
+            prediction = prediction + [[m, bb] for m, c, bb in zip(mask, cls, bboxes) if
+                                       cls > pred_threshold]
+
+        return prediction
+
+    def load_weights(self, path: str):
+        self.__internal_model.load_weights(path)
