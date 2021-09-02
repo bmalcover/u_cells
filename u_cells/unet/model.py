@@ -180,7 +180,10 @@ class UNet:
         for layer_idx in range(0, layer_depth):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
-            x = ConvBlock(layer_idx, **conv_params)(x)
+            if layer_idx == (layer_depth - 1):
+                x = ConvBlock(layer_idx, **conv_params, name="embedded_layer")(x)
+            else:
+                x = ConvBlock(layer_idx, **conv_params)(x)
             encoder[layer_idx] = x
             x = keras_layer.MaxPooling2D(pool_size)(x)
 
@@ -209,8 +212,7 @@ class UNet:
 
         Args:
             loss_func (str | Callable): Loss function to apply to the main output of the U-Net.
-            check (bool): Only used in the RPN context. If true checks
-            learning_rate
+            learning_rate (Num). Learning rate of the training
 
         Returns:
 
@@ -278,15 +280,16 @@ class UNet:
     def history(self):
         return self.__history
 
+    def get_layer(self, *args, **kwargs):
+        """ Wrapper of the Keras get_layer function.
+        """
+        self.__internal_model.get_layer(*args, **kwargs)
+
     def predict(self, *args, **kwargs):
         """ Infer the value from the Model, wrapper method of the keras predict.
 
         """
         return self.__internal_model.predict(*args, **kwargs)
 
-    def __str__(self):
-        output = ""
-        if self.__internal_model is not None:
-            output = self.__internal_model.summary(print_function=lambda x: x)
-
-        return output
+    def summary(self):
+        self.__internal_model.summary()
