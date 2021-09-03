@@ -176,15 +176,17 @@ class UNet:
 
         x = input_image
         layer_idx = 0
+        embedded_layer = None
 
         for layer_idx in range(0, layer_depth):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
-            if layer_idx == (layer_depth - 1):
-                x = ConvBlock(layer_idx, **conv_params, name="embedded_layer")(x)
-            else:
-                x = ConvBlock(layer_idx, **conv_params)(x)
+            x = ConvBlock(layer_idx, **conv_params)(x)
             encoder[layer_idx] = x
+
+            if layer_idx == (layer_depth - 1):
+                embedded_layer = x
+
             x = keras_layer.MaxPooling2D(pool_size)(x)
 
         for layer_idx in range(layer_idx, -1, -1):
@@ -195,13 +197,15 @@ class UNet:
             x = CropConcatBlock()(x, encoder[layer_idx])
             x = ConvBlock(layer_idx, **conv_params)(x)
 
-        conv10 = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
-                                    padding='same', dilation_rate=dilation_rate,
-                                    kernel_initializer='he_normal', name="img_out")(x)
+        mask_out = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
+                                      padding='same', dilation_rate=dilation_rate,
+                                      kernel_initializer='he_normal', name="img_out")(x)
 
-        model = keras_model.Model(inputs=input_image, outputs=conv10)
+        model = keras_model.Model(inputs=input_image, outputs=mask_out)
 
         self.__internal_model = model
+
+        return input_image, embedded_layer, mask_out
 
     def compile(self, loss_func: Union[str, Callable] = "categorical_crossentropy",
                 learning_rate: Union[int, float] = 3e-5, *args, **kwargs):
@@ -283,7 +287,7 @@ class UNet:
     def get_layer(self, *args, **kwargs):
         """ Wrapper of the Keras get_layer function.
         """
-        self.__internal_model.get_layer(*args, **kwargs)
+        return self.__internal_model.get_layer(*args, **kwargs)
 
     def predict(self, *args, **kwargs):
         """ Infer the value from the Model, wrapper method of the keras predict.

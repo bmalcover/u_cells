@@ -111,7 +111,15 @@ class RPN:
 
         return keras_model.Model([input_feature_map], outputs, name="rpn_model")
 
-    def __build_model(self):
+    def build_model(self):
+        """ Builds the model.
+
+        The RPN model building is done by the combination of the output of a backbone model. This
+        backbone model had been passed previously in the constructor.
+
+        Returns:
+
+        """
         input_gt_masks = keras_layer.Input(
             shape=[self.__input_size[0], self.__input_size[1], None], name="input_gt_masks")
 
