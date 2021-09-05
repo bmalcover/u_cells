@@ -19,9 +19,7 @@ from u_cells.common import losses as own_losses
 
 
 class NeuralMode(enum.Enum):
-    """ Mode for the Neural Network.
-
-    """
+    """ Mode for the Neural Network. """
     INFERENCE = 0
     TRAIN = 1
 
@@ -125,7 +123,21 @@ class RPN:
 
         # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the decoder.
         rpn = RPN.__build_rpn_model(depth=self.__feature_depth)  # Conv5
-        rpn_output = rpn([self.__feature_layer])
+
+        if self.__feature_layer is list:
+            layer_outputs = []  # list of lists
+            for p in self.__feature_layer:
+                layer_outputs.append(rpn([p]))
+            # Concatenate layer outputs
+            # Convert from list of lists of level outputs to list of lists
+            # of outputs across levels.
+            # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
+            output_names = ["rpn_class_logits", "rpn_class", "rpn_bbox"]
+            rpn_output = list(zip(*layer_outputs))
+            rpn_output = [keras_layer.Concatenate(axis=1, name=n)(list(o))
+                          for o, n in zip(rpn_output, output_names)]
+        else:
+            rpn_output = rpn([self.__feature_layer])
 
         # RPN Output
         rpn_class_logits, rpn_class, rpn_bbox = rpn_output
@@ -259,23 +271,20 @@ class RPN:
 
         """
         if self.__mode is NeuralMode.TRAIN:
-            raise EnvironmentError(
-                "When U-Net is combined with RPN must be in predict state to be able to make "
-                "predictions")
+            raise EnvironmentError("This method only can be called if the Mode is set to inference")
 
         pred_threshold = self.__config.PRED_THRESHOLD
-        raw_prediction = self.__internal_model.predict(*args, **kwargs)
+        masks, cls, bboxes = self.__internal_model.predict(*args, **kwargs)
 
-        prediction = []
+        bboxes_pred = []
+        for batch_idx in range(bboxes.shape[0]):
+            objectevness = cls[batch_idx, :, 0]
+            bboxes_idx = bboxes[batch_idx, :, :]
 
-        # Iteration for each batch element
-        for batch_prediction in raw_prediction:
-            mask, cls, bboxes = batch_prediction
+            bboxes_idx = bboxes_idx[objectevness > pred_threshold]
+            bboxes_pred.append(bboxes_idx)
 
-            # Iterating each bounding box
-            prediction = prediction + [[m, bb] for m, c, bb in zip(mask, cls, bboxes) if
-                                       cls > pred_threshold]
-
+        prediction = [masks, bboxes_pred]
         return prediction
 
     def load_weights(self, path: str):
