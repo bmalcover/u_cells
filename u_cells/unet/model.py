@@ -7,15 +7,11 @@ proposed by Ronnenberger et al. and is based on a Encoder-Decoder architecture.
 
 from typing import Callable, Union, Tuple
 import warnings
-import enum
 
 import tensorflow.keras.models as keras_model
 import tensorflow.keras.layers as keras_layer
 from tensorflow.keras.optimizers import *
 import tensorflow as tf
-
-from u_cells.u_cells.common import config
-from u_cells.u_cells.rpn import model as rpn_model
 
 
 class ConvBlock(keras_layer.Layer):
@@ -141,26 +137,13 @@ class CropConcatBlock(keras_layer.Layer):
         return x
 
 
-class NeuralMode(enum.Enum):
-    """ Mode for the Neural Network.
-
-    """
-    INFERENCE = 0
-    TRAIN = 1
-
-
 class UNet:
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]], out_channel: int,
-                 batch_normalization: bool, config_net: config.Config = None, rpn: bool = False,
-                 mode: NeuralMode = NeuralMode.TRAIN):
+                 batch_normalization: bool):
 
         self.__input_size: Tuple[int, int, int] = input_size
         self.__batch_normalization: bool = batch_normalization
         self.__n_channels: int = out_channel
-        self.__config = config_net
-
-        self.__build_rpn: bool = rpn
-        self.__mode: NeuralMode = mode
 
         self.__internal_model = None
         self.__history = None
@@ -193,12 +176,17 @@ class UNet:
 
         x = input_image
         layer_idx = 0
+        embedded_layer = None
 
         for layer_idx in range(0, layer_depth):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
             x = ConvBlock(layer_idx, **conv_params)(x)
             encoder[layer_idx] = x
+
+            if layer_idx == (layer_depth - 1):
+                embedded_layer = x
+
             x = keras_layer.MaxPooling2D(pool_size)(x)
 
         for layer_idx in range(layer_idx, -1, -1):
@@ -209,72 +197,18 @@ class UNet:
             x = CropConcatBlock()(x, encoder[layer_idx])
             x = ConvBlock(layer_idx, **conv_params)(x)
 
-        conv10 = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
-                                    padding='same', dilation_rate=dilation_rate,
-                                    kernel_initializer='he_normal', name="img_out")(x)
+        mask_out = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
+                                      padding='same', dilation_rate=dilation_rate,
+                                      kernel_initializer='he_normal', name="img_out")(x)
 
-        if not self.__build_rpn:
-            model = keras_model.Model(inputs=input_image, outputs=conv10)
-        else:
-            if config is None:
-                raise AttributeError("Config for RPN model not defined")
-
-            input_gt_masks = keras_layer.Input(
-                shape=[self.__input_size[0], self.__input_size[1], None],
-                name="input_gt_masks")
-            # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the
-            # decoder.
-            rpn = rpn_model.build_rpn_model(depth=n_filters * 16)  # Conv5
-            rpn_output = rpn([list(encoder.values())[-1]])
-
-            # RPN Output
-            rpn_class_logits, rpn_class, rpn_bbox = rpn_output
-
-            if self.__mode is NeuralMode.TRAIN:
-                # RPN GT
-                input_rpn_match = keras_layer.Input(shape=[None, 1], name="input_rpn_match",
-                                                    dtype=tf.int32)
-                input_rpn_bbox = keras_layer.Input(shape=[None, 4], name="input_rpn_bbox",
-                                                   dtype=tf.float32)
-                input_gt_class_ids = keras_layer.Input(shape=[None], name="input_gt_class_ids",
-                                                       dtype=tf.int32)
-
-                # RPN Loss
-                rpn_class_loss = keras_layer.Lambda(lambda x: rpn_model.class_loss_graph(*x),
-                                                    name="rpn_class_loss")(
-                    [input_rpn_match, rpn_class_logits])
-                rpn_bbox_loss = keras_layer.Lambda(lambda x: rpn_model.bbox_loss_graph(*x),
-                                                   name="rpn_bbox_loss")(
-                    [input_rpn_bbox, input_rpn_match, rpn_bbox])
-
-                mask_loss = keras_layer.Lambda(lambda x: rpn_model.mrcnn_mask_loss_graph(*x),
-                                               name="img_out_loss")(
-                    [input_gt_masks, input_gt_class_ids, conv10])
-
-                # Input of the model
-                inputs = [input_image, input_gt_masks, input_rpn_match, input_rpn_bbox,
-                          input_gt_class_ids]
-
-                # Output of the model
-                outputs = [conv10,
-                           mask_loss,
-                           rpn_class,
-                           rpn_bbox,
-                           rpn_class_loss,
-                           rpn_bbox_loss]
-
-            else:
-                # Create masks for detections
-
-                inputs = [input_image]
-                outputs = [conv10, rpn_class, rpn_bbox]
-
-            model = keras_model.Model(inputs=inputs, outputs=outputs, name='r-unet')
+        model = keras_model.Model(inputs=input_image, outputs=mask_out)
 
         self.__internal_model = model
 
+        return input_image, embedded_layer, mask_out
+
     def compile(self, loss_func: Union[str, Callable] = "categorical_crossentropy",
-                check: bool = False, learning_rate: Union[int, float] = 3e-5, *args, **kwargs):
+                learning_rate: Union[int, float] = 3e-5, *args, **kwargs):
         """ Compiles the models.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
@@ -282,30 +216,15 @@ class UNet:
 
         Args:
             loss_func (str | Callable): Loss function to apply to the main output of the U-Net.
-            check (bool): Only used in the RPN context. If true checks
-            learning_rate
+            learning_rate (Num). Learning rate of the training
 
         Returns:
 
         """
-        if not self.__build_rpn:
-            loss_functions = {"img_out": loss_func}
+        loss_functions = {"img_out": loss_func}
 
-            self.__internal_model.compile(*args, **kwargs, optimizer=Adam(lr=learning_rate),
-                                          loss=loss_functions, metrics=['categorical_accuracy'])
-        else:
-            loss_names = ["rpn_class_loss", "rpn_bbox_loss", "img_out_loss"]
-
-            for name in loss_names:
-                layer = self.__internal_model.get_layer(name)
-                if check and layer.output in self.__internal_model.losses:
-                    continue
-                loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
-                self.__internal_model.add_loss(loss)
-
-            self.__internal_model.compile(*args, **kwargs,
-                                          optimizer=Adam(lr=self.__config.LEARNING_RATE),
-                                          loss=[None] * len(self.__internal_model.outputs))
+        self.__internal_model.compile(*args, **kwargs, optimizer=Adam(lr=learning_rate),
+                                      loss=loss_functions, metrics=['categorical_accuracy'])
 
     def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
               validation_steps: int, check_point_path: Union[str, None], callbacks=None, verbose=1,
@@ -328,16 +247,8 @@ class UNet:
         Returns:
 
         """
-        if self.__build_rpn and self.__mode is not NeuralMode.TRAIN:
-            raise ValueError(
-                f"Mode of the Neural network incorrect: instead of train the mode is {self.__mode}")
-
         if self.__history is not None:
             warnings.warn("Model already trained, starting new training")
-
-        if self.__build_rpn:
-            steps_per_epoch = self.__config.STEPS_PER_EPOCH
-            validation_steps = self.__config.VALIDATION_STEPS
 
         if callbacks is None:
             callbacks = []
@@ -373,48 +284,16 @@ class UNet:
     def history(self):
         return self.__history
 
-    def predict(self, raw=False, *args, **kwargs):
-        """ Infer the value from the Model.
+    def get_layer(self, *args, **kwargs):
+        """ Wrapper of the Keras get_layer function.
+        """
+        return self.__internal_model.get_layer(*args, **kwargs)
 
-        When the model is the vanilla U-Net this method wrapper the original predict method of the
-        keras model. In the case of U-Net + RPN (and if the raw parameters is set to False), the
-        results are filtered depending on the value of the objectevness. This filter is a minimum
-        threshold defined on the config object.
-
-        Args:
-            raw (bool): Flag, only applicable 
-            *args:
-            **kwargs:
-
-        Returns:
+    def predict(self, *args, **kwargs):
+        """ Infer the value from the Model, wrapper method of the keras predict.
 
         """
-        if self.__build_rpn and not raw:
-            if self.__mode is NeuralMode.TRAIN:
-                raise EnvironmentError(
-                    "When U-Net is combined with RPN must be in predict state to be able to make "
-                    "predictions")
-            else:
-                pred_threshold = self.__config.PRED_THRESHOLD
-                raw_prediction = self.__internal_model.predict(*args, **kwargs)
+        return self.__internal_model.predict(*args, **kwargs)
 
-                prediction = []
-
-                # Iteration for each batch element
-                for batch_prediction in raw_prediction:
-                    mask, cls, bboxes = batch_prediction
-
-                    # Iterating each bounding box
-                    prediction = prediction + [[m, bb] for m, c, bb in zip(mask, cls, bboxes) if
-                                               cls > pred_threshold]
-        else:
-            prediction = self.__internal_model.predict(*args, **kwargs)
-
-        return prediction
-
-    def __str__(self):
-        output = ""
-        if self.__internal_model is not None:
-            output = self.__internal_model.summary(print_function=lambda x: x)
-
-        return output
+    def summary(self):
+        self.__internal_model.summary()
