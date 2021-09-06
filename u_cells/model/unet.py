@@ -209,7 +209,7 @@ class UNet:
 
     def compile(self, loss_func: Union[str, Callable] = "categorical_crossentropy",
                 learning_rate: Union[int, float] = 3e-5, *args, **kwargs):
-        """ Compiles the models.
+        """ Compiles the model.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
         vanilla U-Net this function works as wrapper for the keras.model compile method.

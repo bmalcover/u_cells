@@ -135,3 +135,4 @@ dmypy.json
 /.idea/vcs.xml
 
 ./in/
+./out_aug/

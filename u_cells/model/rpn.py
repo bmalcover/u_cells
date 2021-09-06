@@ -183,7 +183,7 @@ class RPN:
         self.__internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
 
     def compile(self, *args, **kwargs):
-        """ Compiles the models.
+        """ Compiles the model.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
         vanilla U-Net this function works as wrapper for the keras.model compile method.

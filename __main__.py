@@ -8,7 +8,7 @@ augmentation function and then use the generated data within a Keras generator.
 import imgaug.augmenters as iaa
 import imgaug as ia
 
-from u_cells.unet import data as u_data
+from u_cells.data import unet as u_data
 
 
 def main():
