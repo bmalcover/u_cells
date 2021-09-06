@@ -128,8 +128,8 @@ class Config(ABC):
     # Gradient norm clipping
     GRADIENT_CLIP_NORM = 5.0
 
+    TOP_DOWN_PYRAMID_SIZE = 256
     # Threshold to accept predictions
-
     PRED_THRESHOLD = 0.8
 
     def __init__(self):

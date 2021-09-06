@@ -124,7 +124,7 @@ class RPN:
         # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the decoder.
         rpn = RPN.__build_rpn_model(depth=self.__feature_depth)  # Conv5
 
-        if self.__feature_layer is list:
+        if type(self.__feature_layer) is list:
             layer_outputs = []  # list of lists
             for p in self.__feature_layer:
                 layer_outputs.append(rpn([p]))
