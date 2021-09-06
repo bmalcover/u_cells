@@ -176,16 +176,12 @@ class UNet:
 
         x = input_image
         layer_idx = 0
-        embedded_layer = None
 
         for layer_idx in range(0, layer_depth):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
             x = ConvBlock(layer_idx, **conv_params)(x)
             encoder[layer_idx] = x
-
-            if layer_idx == (layer_depth - 1):
-                embedded_layer = x
 
             x = keras_layer.MaxPooling2D(pool_size)(x)
 
@@ -205,7 +201,7 @@ class UNet:
 
         self.__internal_model = model
 
-        return input_image, embedded_layer, mask_out
+        return input_image, encoder, mask_out
 
     def compile(self, loss_func: Union[str, Callable] = "categorical_crossentropy",
                 learning_rate: Union[int, float] = 3e-5, *args, **kwargs):
