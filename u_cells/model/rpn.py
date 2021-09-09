@@ -40,6 +40,10 @@ class RPN:
         self.__internal_model = None
         self.__history = None
 
+    @property
+    def internal_model(self) -> keras_model.Model:
+        return self.__internal_model
+
     @staticmethod
     def __rpn_graph(feature_map, anchors_per_location, anchor_stride):
         """Builds the computation graph of Region Proposal Network.
@@ -121,8 +125,8 @@ class RPN:
         input_gt_masks = keras_layer.Input(
             shape=[self.__input_size[0], self.__input_size[1], None], name="input_gt_masks")
 
-        # We connect the U-Net to the RPN via the last CONV5 layer, the last layer of the decoder.
-        rpn = RPN.__build_rpn_model(depth=self.__feature_depth)  # Conv5
+        rpn = RPN.__build_rpn_model(self.__config.RPN_ANCHOR_STRIDE, self.__feature_depth, len(
+            self.__config.RPN_ANCHORS_RATIO))  # Conv5
 
         if type(self.__feature_layer) is list:
             layer_outputs = []  # list of lists
