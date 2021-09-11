@@ -293,3 +293,26 @@ class RPN:
 
     def load_weights(self, path: str):
         self.__internal_model.load_weights(path)
+
+    @staticmethod
+    def features_2_rpn(features, depth: int):
+        """ Prepares a list of features layer to be used on a RPN method as a pyramid feature layer
+
+        Args:
+            features (list): List of layers that represent a set o features of different size
+            depth (int): Depth of the resulting layers.
+
+        Returns:
+
+        """
+        rpn_features = []
+
+        for x in features:
+            x = keras_layer.Conv2D(depth, (1, 1))(x)
+            if rpn_features:
+                x = keras_layer.Add()([keras_layer.UpSampling2D(size=(2, 2))(rpn_features[-1]),
+                                       x])
+            x = keras_layer.Conv2D(depth, (3, 3), padding="same")(x)
+            rpn_features.append(x)
+
+        return rpn_features
