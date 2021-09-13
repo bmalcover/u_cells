@@ -222,7 +222,7 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     return loss
 
 
-def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
+def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
     """
 
     Args:
@@ -230,6 +230,7 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
                     fill in unsed bbox deltas.
         rpn_match: [batch, anchors, 1]. Anchor match type. 1=pos, -1=neg, 0=neutral anchor.
         rpn_bbox: [batch, anchors, (dy, dx, log(dh), log(dw))]
+        batch_size
 
     Returns:
 
@@ -263,7 +264,7 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
     # Trim target bounding box deltas to the same length as rpn_bbox.
     batch_counts = keras.sum(keras.cast(keras.equal(rpn_match, 1), tf.int32), axis=1)
 
-    target_bbox = batch_pack_graph(target_bbox, batch_counts, 4)
+    target_bbox = batch_pack_graph(target_bbox, batch_counts, batch_size)
 
     loss = smooth_l1_loss(target_bbox, rpn_bbox)
     loss = keras.switch(tf.size(input=loss) > 0, keras.mean(loss), tf.constant(0.0))

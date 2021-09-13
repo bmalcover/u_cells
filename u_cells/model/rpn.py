@@ -161,7 +161,7 @@ class RPN:
                 [input_rpn_match, rpn_class_logits])
             rpn_bbox_loss = keras_layer.Lambda(lambda x: own_losses.bbox_loss_graph(*x),
                                                name="rpn_bbox_loss")(
-                [input_rpn_bbox, input_rpn_match, rpn_bbox])
+                [input_rpn_bbox, input_rpn_match, rpn_bbox, self.__config.BATCH_SIZE])
 
             mask_loss = keras_layer.Lambda(lambda x: own_losses.mrcnn_mask_loss_graph(*x),
                                            name="img_out_loss")(
@@ -259,7 +259,7 @@ class RPN:
 
         self.__history = history
 
-    def predict(self, *args, **kwargs):
+    def predict(self, raw=False, *args, **kwargs):
         """ Infer the value from the Model.
 
         When the model is the vanilla U-Net this method wrapper the original predict method of the
@@ -268,6 +268,7 @@ class RPN:
         threshold defined on the config object.
 
         Args:
+            raw (bool)
             *args:
             **kwargs:
 
@@ -278,17 +279,21 @@ class RPN:
             raise EnvironmentError("This method only can be called if the Mode is set to inference")
 
         pred_threshold = self.__config.PRED_THRESHOLD
-        masks, cls, bboxes = self.__internal_model.predict(*args, **kwargs)
+        prediction = self.__internal_model.predict(*args, **kwargs)
 
-        bboxes_pred = []
-        for batch_idx in range(bboxes.shape[0]):
-            objectevness = cls[batch_idx, :, 0]
-            bboxes_idx = bboxes[batch_idx, :, :]
+        if not raw:
+            masks, cls, bboxes = prediction
 
-            bboxes_idx = bboxes_idx[objectevness > pred_threshold]
-            bboxes_pred.append(bboxes_idx)
+            bboxes_pred = []
+            for batch_idx in range(bboxes.shape[0]):
+                objectevness = cls[batch_idx, :, 1]
+                bboxes_idx = bboxes[batch_idx, :, :]
 
-        prediction = [masks, bboxes_pred]
+                bboxes_idx = bboxes_idx[objectevness > pred_threshold]
+                bboxes_pred.append(bboxes_idx)
+
+            prediction = [masks, bboxes_pred]
+
         return prediction
 
     def load_weights(self, path: str):
