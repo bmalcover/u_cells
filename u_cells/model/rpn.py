@@ -125,8 +125,8 @@ class RPN:
         input_gt_masks = keras_layer.Input(
             shape=[self.__input_size[0], self.__input_size[1], None], name="input_gt_masks")
 
-        rpn = RPN.__build_rpn_model(self.__config.RPN_ANCHOR_STRIDE, self.__feature_depth, len(
-            self.__config.RPN_ANCHORS_RATIO))  # Conv5
+        rpn = RPN.__build_rpn_model(self.__config.RPN_ANCHOR_STRIDE, len(self.__config.RPN_ANCHOR_RATIOS),
+                                    self.__feature_depth)  # Conv5
 
         if type(self.__feature_layer) is list:
             layer_outputs = []  # list of lists
@@ -259,7 +259,7 @@ class RPN:
 
         self.__history = history
 
-    def predict(self, raw=False, *args, **kwargs):
+    def predict(self, *args, **kwargs):
         """ Infer the value from the Model.
 
         When the model is the vanilla U-Net this method wrapper the original predict method of the
@@ -268,7 +268,6 @@ class RPN:
         threshold defined on the config object.
 
         Args:
-            raw (bool)
             *args:
             **kwargs:
 
@@ -281,7 +280,7 @@ class RPN:
         pred_threshold = self.__config.PRED_THRESHOLD
         prediction = self.__internal_model.predict(*args, **kwargs)
 
-        if not raw:
+        if not self.__config.RAW_PREDICTION:
             masks, cls, bboxes = prediction
 
             bboxes_pred = []

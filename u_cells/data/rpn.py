@@ -202,8 +202,9 @@ class DataGenerator(KU.Sequence):
             and masks.
         """
 
-    def __init__(self, steps: int, dataset, config, shuffle=True, augmentation=None, detection_targets=False, ):
-        
+    def __init__(self, steps: int, dataset, config, shuffle=True, augmentation=None,
+                 detection_targets=False):
+
         self.__steps = steps
         self.image_ids = np.copy(dataset.image_ids)
         self.dataset = dataset
@@ -262,13 +263,17 @@ class DataGenerator(KU.Sequence):
                     dtype=rpn_bbox.dtype)
                 batch_images = np.zeros(
                     (self.batch_size,) + image.shape, dtype=np.float32)
+                if self.config.COMBINE_FG:
+                    mask_depth = 1
+                else:
+                    mask_depth = self.config.MAX_GT_INSTANCES
                 batch_gt_masks = np.zeros(
-                    (self.batch_size, gt_masks.shape[0], gt_masks.shape[1],
-                     self.config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
+                    (self.batch_size, gt_masks.shape[0], gt_masks.shape[1], mask_depth),
+                    dtype=gt_masks.dtype)
                 batch_gt_class_ids = np.zeros(
                     (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32)
-            
-                        # If more instances than fits in the array, sub-sample from them.
+
+                # If more instances than fits in the array, sub-sample from them.
             if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
                 ids = np.random.choice(
                     np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
@@ -283,21 +288,24 @@ class DataGenerator(KU.Sequence):
             b += 1
 
         inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
-#         inputs = [batch_images]
-        outputs = [np.zeros((4, 512, 512, 100))] + ([np.zeros((10,10))] * 5)
+        outputs = [np.zeros((4, 512, 512, 100))] + ([np.zeros((10, 10))] * 5)
 
         return inputs, outputs
 
     @staticmethod
     def __generate_anchors(scales, ratios, shape, feature_stride, anchor_stride):
         """
-        scales: 1D array of anchor sizes in pixels. Example: [32, 64, 128]
-        ratios: 1D array of anchor ratios of width/height. Example: [0.5, 1, 2]
-        shape: [height, width] spatial shape of the feature map over which
-                to generate anchors.
-        feature_stride: Stride of the feature map relative to the image in pixels.
-        anchor_stride: Stride of anchors on the feature map. For example, if the
-            value is 2 then generate anchors for every other feature map pixel.
+
+        Args:
+            scales: 1D array of anchor sizes in pixels. Example: [32, 64, 128]
+            ratios: 1D array of anchor ratios of width/height. Example: [0.5, 1, 2]
+            shape: [height, width] spatial shape of the feature map over which to generate anchors.
+            feature_stride: Stride of the feature map relative to the image in pixels.
+            anchor_stride: Stride of anchors on the feature map. For example, if the value is 2 then
+                            generate anchors for every other feature map pixel.
+
+        Returns:
+
         """
         # Get all combinations of scales and ratios
         scales, ratios = np.meshgrid(np.array(scales), np.array(ratios))
@@ -472,18 +480,18 @@ class DataGenerator(KU.Sequence):
     def load_image_gt(dataset, config, image_id, augmentation=None):
         """Load and return ground truth data for an image (image, mask, bounding boxes).
 
-        augmentation: Optional. An imgaug (https://github.com/aleju/imgaug) augmentation.
-            For example, passing imgaug.augmenters.Fliplr(0.5) flips images
-            right/left 50% of the time.
+        Args:
+            augmentation: Optional. An imgaug (https://github.com/aleju/imgaug) augmentation.
+                          For example, passing imgaug.augmenters.Fliplr(0.5) flips images right/left
+                          50% of the time.
 
         Returns:
-        image: [height, width, 3]
-        shape: the original shape of the image before resizing and cropping.
-        class_ids: [instance_count] Integer class IDs
-        bbox: [instance_count, (y1, x1, y2, x2)]
-        mask: [height, width, instance_count]. The height and width are those
-            of the image unless use_mini_mask is True, in which case they are
-            defined in MINI_MASK_SHAPE.
+            image: [height, width, 3]
+            shape: the original shape of the image before resizing and cropping.
+            class_ids: [instance_count] Integer class IDs
+            bbox: [instance_count, (y1, x1, y2, x2)]
+            mask: [height, width, instance_count]. The height and width are those of the image
+                  unless use_mini_mask is True, in which case they are defined in MINI_MASK_SHAPE.
         """
         # Load image and mask
         image = dataset.load_image(image_id)
@@ -542,10 +550,13 @@ class DataGenerator(KU.Sequence):
         source_class_ids = dataset.source_class_ids[dataset.image_info[image_id]["source"]]
         active_class_ids[source_class_ids] = 1
 
-
         # Image meta data
         image_meta = compose_image_meta(image_id, original_shape, image.shape,
                                         window, scale, active_class_ids)
+
+        if config.COMBINE_FG:
+            mask = np.sum(mask, axis=-1)
+            mask[mask > 1] = 1
 
         return image, image_meta, class_ids, bbox, mask
 

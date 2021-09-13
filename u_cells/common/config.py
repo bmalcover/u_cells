@@ -56,7 +56,6 @@ class Config(ABC):
     # How many anchors per image to use for RPN training
     RPN_TRAIN_ANCHORS_PER_IMAGE = 256
 
-
     # Input image resizing
     # Generally, use the "square" resizing mode for training and predicting
     # and it should work well in most cases. In this mode, images are scaled
@@ -131,6 +130,11 @@ class Config(ABC):
     TOP_DOWN_PYRAMID_SIZE = 256
     # Threshold to accept predictions
     PRED_THRESHOLD = 0.8
+
+    # Flag, if true the masks of the different objects are combined into a solo mask
+    COMBINE_FG = False
+
+    RAW_PREDICTION = True
 
     def __init__(self):
         """Set values of computed attributes."""

@@ -4,13 +4,11 @@
 """
 from enum import Enum
 import itertools
-import random
 import json
 import os
 import glob
 
 import cv2
-import tqdm
 import skimage
 import numpy as np
 from skimage import transform
@@ -18,184 +16,54 @@ import imgaug.augmenters as iaa
 
 from tensorflow.keras import utils as KU
 
-CODES = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
 
-
-class DecodeMode(Enum):
-    CELLS = 1
-    CELLS_BCK = 2
-    MULTICHANEL_N_BCK = 3
-    MULTICHANEL_BCK = 4
-
-
-def decode(gt_img: np.ndarray, mode: DecodeMode):
-    """ Decodes the input image into a mask for class or a background image.
-    
-    To be able to handle multiple channels images (more than three), instead of saving corrupt img
-    files with more than three channels we define a unique code for any of the desirable channels.
-      
-    Args:
-        gt_img (numpy array): Ground truth image of 3 channels. The image is encoded to contain
-                              more than one channel
-        mode (DecodeMode): Mode to decode
-
-    Returns:
-
-    """
-    channels = []
-    if mode in (DecodeMode.MULTICHANEL_N_BCK, DecodeMode.MULTICHANEL_BCK):
-        for c in CODES:
-            channel = np.argmax(c)
-            mask_aux = gt_img[:, :, channel] == c[channel]
-            mask_aux = mask_aux.astype(np.uint8) * 255
-
-            channels.append(mask_aux)
-
-        decoded_img = np.dstack(channels)
-    else:
-        decoded_img = (gt_img[:, :, 0] < 240) & (gt_img[:, :, 1] < 240) & (gt_img[:, :, 2] < 240)
-        decoded_img = decoded_img.astype(np.uint8) * 255
-
-        channels.append(decoded_img)
-
-    if mode in (DecodeMode.MULTICHANEL_BCK, DecodeMode.CELLS_BCK):
-        # We add the background if one of the decoded options with background is selected.
-        bck_img = (gt_img[:, :, 0] > 240) & (gt_img[:, :, 1] > 240) & (gt_img[:, :, 2] > 240)
-        bck_img = bck_img.astype(np.uint8) * 255
-
-        channels.append(bck_img)
-        decoded_img = np.dstack(channels)
-
-    return decoded_img
-
-
-def generate_data(n_images: int, input_path: str, output_folder: str, augmentation,
-                  region_point_path: str, to_mask: bool = False, output_shape=None):
-    """ Generate data an saves it to disk.
-
-    The data generation is a slow task. This functions aims to generate a defined set of images, and
-    regions, to improve the performance of the train process.
-
-    Args:
-        n_images (int):  Number of images to generate.
-        input_path (str): Path (glob format) containing the set of files.
-        output_folder (str): Path to output files.
-        augmentation:
-        region_point_path:
-        to_mask:
-        output_shape:
-
-    """
-    filenames = glob.glob(input_path)
-
-    region_info = json.load(open(region_point_path))
-    region_info = {k: v["regions"] for k, v in region_info.items()}
-
-    region_out = {}
-
-    augmentation = iaa.Sequential(augmentation)
-    os.makedirs(output_folder, exist_ok=True)
-
-    for idx in tqdm.tqdm(range(n_images)):
-        if to_mask:
-            masks = []
-        else:
-            region_out[str(idx) + ".png"] = {"regions": {}}
-
-        filename = random.choice(filenames)
-        _, name = os.path.split(filename)
-
-        img = cv2.imread(filename)
-
-        h_points = []
-        v_points = []
-
-        for region in region_info[name].values():
-            region = region["shape_attributes"]
-
-            h_points += region['all_points_x']
-            v_points += region['all_points_y']
-
-        points = np.column_stack((h_points, v_points))
-
-        img_aug, points_aug = augmentation(images=[img], keypoints=[points])
-        img_aug = img_aug[0]
-
-        img_aug = skimage.transform.resize(img_aug, (output_shape[0], output_shape[1], 3))
-
-        regions = region_info[name].values()
-        regions_lens = map(lambda x: len(x['shape_attributes']['all_points_x']), regions)
-
-        min_points = []
-        last_point = 0
-        for idx_region, region_l in enumerate(regions_lens):
-            points = points_aug[0][last_point:last_point + region_l, :].astype(int)
-            dist_2_origin = list(map(lambda x: np.linalg.norm(x - np.array([0, 0])), points))
-
-            min_points.append(min(dist_2_origin))
-
-            if to_mask:
-                mask = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
-                mask = cv2.drawContours(mask, [points], -1, 1, -1)
-
-                mask = cv2.resize(mask, output_shape)
-
-                masks.append(mask)
-            else:
-                region_out[f"{idx}.png"]["regions"][str(idx_region)] = {
-                    "shape_attributes": {'all_points_x': list(points[:, 0]),
-                                         'all_points_y': list(points[:, 1])}}
-
-            last_point += region_l
-
-        idx_min_points = np.argsort(min_points)
-
-        out_path = os.path.join(output_folder, str(idx).zfill(3) + ".png")
-        cv2.imwrite(out_path, img_aug * 255)
-
-        if to_mask:
-            with open(os.path.join(output_folder, str(idx).zfill(3) + ".npy"), 'wb+') as f:
-                masks = np.dstack(masks)
-                masks = masks[:, :, idx_min_points]
-                np.save(f, np.array(masks))
-
-    if not to_mask:
-        with open(os.path.join(output_folder, "regions.json"), "w") as outfile:
-            json.dump(region_out, outfile)
+class DataFormat(Enum):
+    CACHE = 1
+    MULTI_MASK = 2
+    MASK = 3
 
 
 class DataGenerator(KU.Sequence):
 
     def __init__(self, batch_size: int, steps: int, path: str, shape, output_size: int,
-                 multi_type: bool = False, regression: bool = False, region_path: str = None,
-                 rgb_input: bool = True, augmentation=None, load_from_cache: bool = False,
-                 do_background: bool = False, unified_batch: bool = False,
-                 binary_output: bool = True):
+                 data_format: DataFormat, mask_path: str = None, region_path: str = None,
+                 augmentation=None, background: bool = False, foreground: bool = False,
+                 rgb: bool = False):
         if "*" not in path and region_path is None:
             raise Exception("Regions path or a path with global format needed")
 
-        self.__base_path = path
         self.__steps = steps
-        self.__multi_type = multi_type
-        self.__regression = regression
         self.__shape = shape
-        self.__rgb = rgb_input
         self.__output_size = output_size
         self.__batch_size = batch_size
 
-        self.__load_from_cache = load_from_cache
+        if data_format is None:
+            data_format = DataFormat.MASK
+
+        self.__data_format = data_format
         self.__augmentation = iaa.Sequential(augmentation)
-        self.__do_background = do_background
-        self.__binary_output = binary_output
-        self.__unified_batch = unified_batch
+        self.__background = background
+        self.__foreground = foreground
+
+        self.__rgb = rgb
+
+        if mask_path is None:
+            self.__masks = None
+        else:
+            self.__masks = sorted(glob.glob(mask_path))
 
         if region_path is not None:
-            self.__region_data = self.__get_regions_info(region_path)
-            self.__keys = list(self.__region_data.keys())
+            self.__regions = self.__get_regions_info(os.path.join(path, region_path))
+            # We concatenate the base path to the file names
+            self.__files = sorted(list(map(lambda x: os.path.join(path, x), self.__keys())))
         else:
-            self.__keys = None
+            self.__files = sorted(glob.glob(path))
 
-    def __get_regions_info(self, path: str) -> dict:
+    def __keys(self):
+        return list(self.__regions.keys())
+
+    @staticmethod
+    def __get_regions_info(path: str) -> dict:
         """ Gets the information of the regions.
 
         The information is stored with VIA 2.0 format. The regions are saved as a dictionary for
@@ -208,7 +76,7 @@ class DataGenerator(KU.Sequence):
         Returns:
 
         """
-        info = json.load(open(os.path.join(self.__base_path, path)))
+        info = json.load(open(path))
 
         info = {k: v["regions"] for k, v in info.items()}
 
@@ -220,22 +88,20 @@ class DataGenerator(KU.Sequence):
         """
         return self.__steps
 
-    def __load_cache(self, path: str, filename: str, n_channels: int):
+    def __load_cache(self, path_img: str, n_channels: int):
         """ Loads cache masks.
 
         Args:
-            path:
-            filename:
+            path_img (str):
             n_channels:
 
         Returns:
 
         """
-        mask_path, _ = os.path.split(path)
-        _, name_path = os.path.split(filename)
+        base_path, name_path = os.path.split(path_img)
 
-        mask = None
-        with open(os.path.join(mask_path, f"{name_path.split('.')[0]}.npy"),
+        mask = np.zeros((self.__shape[0], self.__shape[1], n_channels))
+        with open(os.path.join(base_path, f"{name_path.split('.')[0]}.npy"),
                   'rb') as f:
             mask = np.load(f)
             # Mask has a shape of (shape[0], shape[1], number of channels with objects)
@@ -251,9 +117,6 @@ class DataGenerator(KU.Sequence):
                 mask = np.dstack((mask, aux_mask))
             elif mask.shape[-1] > self.__output_size:
                 mask = mask[:, :, :n_channels]
-
-        if mask is None:
-            mask = np.zeros((self.__shape[0], self.__shape[1], n_channels))
 
         return mask, n_regions
 
@@ -285,7 +148,6 @@ class DataGenerator(KU.Sequence):
 
             """
             pts = pts.astype(int)
-
             c_mask = np.zeros(shape, dtype=np.uint8)
 
             cv2.drawContours(c_mask, [pts], -1, 1, -1)
@@ -306,7 +168,7 @@ class DataGenerator(KU.Sequence):
 
         if augmentation is not None:
             img_aug, points_aug = augmentation(images=[image], keypoints=[points])
-            input_img, points = img_aug[0], points_aug[0]
+            image, points = img_aug[0], points_aug[0]
 
         n_regions_points = 0
         for idx_channel, (n_points) in enumerate(list(regions_size)):
@@ -323,89 +185,69 @@ class DataGenerator(KU.Sequence):
             mask[:, :, idx_channel] = channel_mask
             idx_channel += 1
 
-        return mask, len(regions)
+        return mask, image, len(regions)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         """ Returns a batch to train.
 
         Args:
-            idx:
+            idx (int):
 
         Returns:
 
         """
         input_batch = []
         masks = []
-        regressors = []
 
         output_shape = (self.__shape[0], self.__shape[1], self.__output_size)
 
-        files = self.__keys
-
-        if files is None:
-            files = glob.glob(self.__base_path)
-
         for n_batch in range(0, self.__batch_size):
-            idx = (idx + n_batch) % len(files)
-            filename = files[idx]
+            idx = (idx + n_batch) % len(self.__files)
+            path = self.__files[idx]
 
-            input_shape = self.__shape
-            if self.__rgb:
-                input_shape = (self.__shape[0], self.__shape[1], 3)
+            input_img = cv2.imread(path, int(self.__rgb))
 
-            path = filename
-            if not self.__load_from_cache:
-                path = os.path.join(self.__base_path, path)
+            if self.__data_format is DataFormat.CACHE:
+                mask, _ = self.__load_cache(path, self.__output_size)
+            elif self.__data_format is DataFormat.MULTI_MASK:
+                regions = self.__regions
+                mask, input_img, _ = DataGenerator.__draw_regions(regions[self.__keys()[idx]],
+                                                                  input_img, output_shape,
+                                                                  self.__augmentation)
+            else:  # MASK:
+                mask = cv2.imread(self.__masks[idx], -1)
+                mask = cv2.resize(mask, self.__shape)
 
-            input_img = cv2.imread(path)
+                mask = np.expand_dims(mask, 2)
 
-            if self.__load_from_cache:
-                mask, n_regions = self.__load_cache(path, filename, self.__output_size)
+            input_img = skimage.transform.resize(input_img, self.__shape)
 
-            else:
-                mask, n_regions = DataGenerator.__draw_regions(self.__region_data[filename],
-                                                               input_img, output_shape,
-                                                               self.__augmentation)
+            if self.__background or self.__foreground:
+                background, foreground = self.__get_bg_fg(mask)
 
-            input_img = skimage.transform.resize(input_img, input_shape)
+                if self.__foreground:
+                    mask = foreground
+                mask = np.dstack([background, mask])
 
-            output_size = self.__output_size
-            if self.__do_background or self.__binary_output:
-                foreground = np.sum(mask, axis=-1)  # We merge all the channels with info
-                background = np.zeros_like(foreground)
-
-                background[foreground == 0] = 1
-
-                if self.__binary_output:
-                    foreground[foreground > 1] = 1
-                    mask = np.dstack([background, foreground])
-                    output_size = 2
-                else:
-                    mask = np.dstack([background, mask])
-                    output_size += 1
-
-            if not self.__multi_type:
-                mask = np.sum(mask, axis=-1)
-
-            mask = mask.reshape((self.__shape[0], self.__shape[1], output_size))
-
-            masks.append(mask)
-            regressors.append(n_regions)
-
+            masks.append(mask.reshape((self.__shape[0], self.__shape[1], -1)))
             input_batch.append(input_img)
 
-        if self.__unified_batch:
-            masks = [list(np.swapaxes(np.swapaxes(m, 0, 2), 1, 2)) for m in masks]
+        return np.array(input_batch), {"img_out": np.array(masks)}
 
-            masks = list(itertools.chain.from_iterable(masks))
-            masks = np.dstack(masks)
-        else:
-            masks = np.array(masks)
+    @staticmethod
+    def __get_bg_fg(mask):
+        """ Extracts background and foreground of a mask.
+        
+        Args:
+            mask: 
 
-        input_batch = np.array(input_batch)
-        regressors = np.array(regressors)
+        Returns:
 
-        if self.__regression:
-            return input_batch, {"img_out": masks, 'regressor_output': regressors}
-        else:
-            return input_batch, {"img_out": masks}
+        """
+        foreground = np.sum(mask, axis=-1)  # We merge all the channels with info
+        foreground[foreground > 1] = 1
+
+        background = np.zeros_like(foreground)
+        background[foreground == 0] = 1
+
+        return background, foreground
