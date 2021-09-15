@@ -283,6 +283,7 @@ class DataGenerator(KU.Sequence):
             batch_rpn_match[b] = rpn_match[:, np.newaxis]
             batch_rpn_bbox[b] = rpn_bbox
             batch_images[b] = self.mold_image(image.astype(np.float32))
+            gt_masks = gt_masks.reshape((gt_masks.shape[0], gt_masks.shape[1], -1))
             batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
             batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             b += 1
@@ -294,7 +295,7 @@ class DataGenerator(KU.Sequence):
 
     @staticmethod
     def __generate_anchors(scales, ratios, shape, feature_stride, anchor_stride):
-        """
+        """ Generates the anchors on each pixel of the feature map.
 
         Args:
             scales: 1D array of anchor sizes in pixels. Example: [32, 64, 128]
@@ -337,14 +338,13 @@ class DataGenerator(KU.Sequence):
 
     @staticmethod
     def __generate_pyramid_anchors(scales, ratios, feature_shapes, feature_strides, anchor_stride):
-        """Generate anchors at different levels of a feature pyramid. Each scale
-        is associated with a level of the pyramid, but each ratio is used in
-        all levels of the pyramid.
+        """Generate anchors at different levels of a feature pyramid. Each scale is associated with
+        a level of the pyramid, but each ratio is used in  all levels of the pyramid.
 
         Returns:
-        anchors: [N, (y1, x1, y2, x2)]. All generated anchors in one array. Sorted
-            with the same order of the given scales. So, anchors of scale[0] come
-            first, then anchors of scale[1], and so on.
+            anchors: [N, (y1, x1, y2, x2)]. All generated anchors in one array. Sorted with the same
+                    order of the given scales. So, anchors of scale[0] come first, then anchors of
+                    scale[1], and so on.
         """
         # Anchors
         # [anchor_count, (y1, x1, y2, x2)]
@@ -357,6 +357,10 @@ class DataGenerator(KU.Sequence):
     @staticmethod
     def __compute_backbone_shapes(image_shape, strides):
         """ Computes the width and height of each stage of the backbone network.
+
+        Args:
+            image_shape:
+            strides:
 
         Returns:
             [N, (height, width)]. Where N is the number of stages

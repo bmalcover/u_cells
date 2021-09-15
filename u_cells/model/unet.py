@@ -19,9 +19,9 @@ class ConvBlock(keras_layer.Layer):
 
     """
 
-    def __init__(self, layer_idx: int, filters: int, kernel_size: Tuple[int, int],
-                 activation: str, kernel_initializer: str = 'he_normal', padding: str = "same",
-                 batch_normalization: bool = False, **kwargs):
+    def __init__(self, layer_idx: int, filters: int, kernel_size: Tuple[int, int], activation: str,
+                 kernel_initializer: str = 'he_normal', padding: str = "same",
+                 residual: bool = False, batch_normalization: bool = False, **kwargs):
         super(ConvBlock, self).__init__(**kwargs)
 
         self.__layer_idx: int = layer_idx
@@ -31,6 +31,7 @@ class ConvBlock(keras_layer.Layer):
         self.__kernel_initializer: str = kernel_initializer
         self.__padding: str = padding
         self.__is_batch_normalized: bool = batch_normalization
+        self.__residual = residual
 
         self.conv2d_1 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
                                            kernel_initializer=kernel_initializer, padding=padding,
@@ -44,6 +45,9 @@ class ConvBlock(keras_layer.Layer):
                                            activation=activation)
         self.batch_normalization_2 = keras_layer.BatchNormalization()
 
+        self.shortcut = keras_layer.Conv2D(filters, (1, 1), padding=padding)
+        self.shortcut_bn = keras_layer.BatchNormalization()
+
     def get_config(self):
         config = super().get_config().copy()
         config.update({
@@ -53,7 +57,8 @@ class ConvBlock(keras_layer.Layer):
             'activation': self.__activation,
             'kernel_initializer': self.__kernel_initializer,
             'padding': self.__padding,
-            'batch_normalization': self.__is_batch_normalized
+            'batch_normalization': self.__is_batch_normalized,
+            'residual': self.__residual
         })
         return config
 
@@ -68,6 +73,13 @@ class ConvBlock(keras_layer.Layer):
 
         if self.__is_batch_normalized:
             x = self.batch_normalization_2(x)
+
+        if self.__residual:
+            shortcut = self.shortcut(inputs)
+
+            if self.__is_batch_normalized:
+                shortcut = self.shortcut_bn(shortcut)
+            x = keras_layer.Add()([x, shortcut])
 
         return x
 
@@ -84,7 +96,7 @@ class UpConvBlock(keras_layer.Layer):
     """
 
     def __init__(self, layer_idx: int, filter_size: Tuple[int, int], filters: int,
-                 activation: str = 'relu', padding: str = "same",
+                 activation: str = 'relu', padding: str = "same", residual: bool = False,
                  kernel_initializer: str = "he_normal", **kwargs):
         super(UpConvBlock, self).__init__(**kwargs)
 
@@ -92,18 +104,25 @@ class UpConvBlock(keras_layer.Layer):
         self.__filter_size = filter_size
         self.__filters = filters
         self.__activation = activation
-        self.__padding = padding
-        self.__kernel_initializer = kernel_initializer
+        self.__padding: str = padding
+        self.__kernel_initializer: str = kernel_initializer
+        self.__residual: bool = residual
 
         self.up_sampling_1 = keras_layer.UpSampling2D(size=filter_size)
         self.conv2d_1 = keras_layer.Conv2D(filters, kernel_size=filter_size,
                                            activation=activation, padding=padding,
                                            kernel_initializer=kernel_initializer)
+        self.shortcut = keras_layer.Conv2D(filters, (1, 1), padding=padding)
 
     def call(self, inputs, **kwargs):
         x = inputs
         x = self.up_sampling_1(x)
         x = self.conv2d_1(x)
+
+        if self.__residual:
+            shortcut = self.shortcut(inputs)
+
+            x = keras_layer.Add()([x, shortcut])
 
         return x
 
@@ -116,6 +135,7 @@ class UpConvBlock(keras_layer.Layer):
             'activation': self.__activation,
             'padding': self.__padding,
             'kernel_initializer': self.__kernel_initializer,
+            'residual': self.__residual
         })
         return config
 
@@ -139,11 +159,12 @@ class CropConcatBlock(keras_layer.Layer):
 
 class UNet:
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]], out_channel: int,
-                 batch_normalization: bool):
+                 batch_normalization: bool, residual: bool = False):
 
         self.__input_size: Tuple[int, int, int] = input_size
         self.__batch_normalization: bool = batch_normalization
         self.__n_channels: int = out_channel
+        self.__residual = residual
 
         self.__internal_model = None
         self.__history = None
@@ -172,6 +193,7 @@ class UNet:
         conv_params = dict(filters=n_filters,
                            kernel_size=kernel_size,
                            activation='relu',
+                           residual=self.__residual,
                            batch_normalization=True)
 
         x = input_image
@@ -189,7 +211,7 @@ class UNet:
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
             x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters * (2 ** layer_idx),
-                            activation='relu')(x)
+                            activation='relu', residual=self.__residual)(x)
             x = CropConcatBlock()(x, encoder[layer_idx])
             x = ConvBlock(layer_idx, **conv_params)(x)
 
