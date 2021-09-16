@@ -96,7 +96,7 @@ class UpConvBlock(keras_layer.Layer):
     """
 
     def __init__(self, layer_idx: int, filter_size: Tuple[int, int], filters: int,
-                 activation: str = 'relu', padding: str = "same", residual: bool = False,
+                 activation: str = 'relu', padding: str = "same",
                  kernel_initializer: str = "he_normal", **kwargs):
         super(UpConvBlock, self).__init__(**kwargs)
 
@@ -106,23 +106,16 @@ class UpConvBlock(keras_layer.Layer):
         self.__activation = activation
         self.__padding: str = padding
         self.__kernel_initializer: str = kernel_initializer
-        self.__residual: bool = residual
 
         self.up_sampling_1 = keras_layer.UpSampling2D(size=filter_size)
         self.conv2d_1 = keras_layer.Conv2D(filters, kernel_size=filter_size,
                                            activation=activation, padding=padding,
                                            kernel_initializer=kernel_initializer)
-        self.shortcut = keras_layer.Conv2D(filters, (1, 1), padding=padding)
 
     def call(self, inputs, **kwargs):
         x = inputs
         x = self.up_sampling_1(x)
         x = self.conv2d_1(x)
-
-        if self.__residual:
-            shortcut = self.shortcut(inputs)
-
-            x = keras_layer.Add()([x, shortcut])
 
         return x
 
@@ -134,8 +127,7 @@ class UpConvBlock(keras_layer.Layer):
             'filters': self.__filters,
             'activation': self.__activation,
             'padding': self.__padding,
-            'kernel_initializer': self.__kernel_initializer,
-            'residual': self.__residual
+            'kernel_initializer': self.__kernel_initializer
         })
         return config
 

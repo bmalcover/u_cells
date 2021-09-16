@@ -227,10 +227,12 @@ class DataGenerator(KU.Sequence):
 
                 if self.__foreground:
                     mask = foreground
-                mask = np.dstack([background, mask])
+
+                if self.__background:
+                    mask = np.dstack([background, mask])
 
             masks.append(mask.reshape((self.__shape[0], self.__shape[1], -1)))
-            input_batch.append(input_img)
+            input_batch.append(input_img.reshape((self.__shape[0], self.__shape[1], -1)))
 
         return np.array(input_batch), {"img_out": np.array(masks)}
 
