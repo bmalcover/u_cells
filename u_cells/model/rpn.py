@@ -125,7 +125,8 @@ class RPN:
         input_gt_masks = keras_layer.Input(
             shape=[self.__input_size[0], self.__input_size[1], None], name="input_gt_masks")
 
-        rpn = RPN.__build_rpn_model(self.__config.RPN_ANCHOR_STRIDE, len(self.__config.RPN_ANCHOR_RATIOS),
+        rpn = RPN.__build_rpn_model(self.__config.RPN_ANCHOR_STRIDE,
+                                    len(self.__config.RPN_ANCHOR_RATIOS),
                                     self.__feature_depth)  # Conv5
 
         if type(self.__feature_layer) is list:
@@ -203,6 +204,7 @@ class RPN:
             layer = self.__internal_model.get_layer(name)
             loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
             self.__internal_model.add_loss(loss)
+            self.__internal_model.add_metric(loss, name=name, aggregation='mean')
 
         self.__internal_model.compile(*args, **kwargs,
                                       optimizer=keras_opt.Adam(lr=self.__config.LEARNING_RATE),

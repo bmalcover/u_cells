@@ -571,6 +571,54 @@ class DataGenerator(KU.Sequence):
         """
         return images.astype(np.float32) - self.config.MEAN_PIXEL
 
+    def decode_deltas(self, deltas: np.ndarray):
+        """ Decodes deltas prediction to the bounding boxes.
+
+        The deltas represent the changes to be applied to the anchors to obtain a better bounding
+        box. This delta [dy, dx, dh, dw] are:
+            dy = (gt_y - a_y) / a_h
+            dx = (gt_x - a_x) / a_w
+            dh = ln(gt_h / a_h)
+            dw = ln(gt_w / a_w)
+
+        where "a" is the anchor previously defined, "d" are the deltas passed as parameter and "gt"
+        are the refined bounding boxes. This function aims from "d" and "a" obtain "gt". For this
+        reason what it does is reverse the operations previously defined.
+
+        Args:
+            deltas (np.array): [dy, dx, dh, dw]
+
+        Returns:
+
+        """
+        assert deltas.shape == self.anchors.shape, "Deltas and anchors has different size"
+
+        b_boxes = np.zeros_like(deltas)
+        deltas = np.copy(deltas)
+
+        # From log(w) and log(h) to w and h
+
+        deltas[:, 2] = np.e ** deltas[:, 2]
+        deltas[:, 3] = np.e ** deltas[:, 3]
+
+        # Anchors shape
+        anchor_height = self.anchors[:, 2] - self.anchors[:, 0]
+        anchor_width = self.anchors[:, 3] - self.anchors[:, 1]
+
+        # Refined shape
+        height = anchor_height * deltas[:, 2]  # e^0 = 1
+        width = anchor_width * deltas[:, 3]  # e^0 = 1
+
+        center_y = (deltas[:, 0] * anchor_height) + (self.anchors[:, 0] + 0.5 * anchor_height)
+        center_x = (deltas[:, 1] * anchor_width) + (self.anchors[:, 1] + 0.5 * anchor_width)
+
+        b_boxes[:, 0] = center_y - 0.5 * height
+        b_boxes[:, 1] = center_x - 0.5 * width
+        b_boxes[:, 2] = b_boxes[:, 0] + height
+        b_boxes[:, 3] = b_boxes[:, 1] + width
+
+        return b_boxes
+
 
 def compose_image_meta(image_id: int, original_image_shape: Tuple[int, int, int],
                        image_shape: Tuple[int, int, int], window: Tuple[int, int, int, int], scale,
