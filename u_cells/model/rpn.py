@@ -30,7 +30,6 @@ class RPN(BaseModel):
     def __init__(self, mode: NeuralMode, input_size: Tuple[int, int, int], feature_layer,
                  feature_depth: Union[int, float], mask_output, img_input, config):
         self.__config = config
-        self.__input_size: Tuple[int, int, int] = input_size
 
         self.__feature_depth: int = feature_depth
         self.__feature_layer = feature_layer
@@ -38,12 +37,7 @@ class RPN(BaseModel):
         self.__img_input = img_input
         self.__mode = mode
 
-        self.__internal_model = None
-        self.__history = None
-
-    @property
-    def internal_model(self) -> keras_model.Model:
-        return self.__internal_model
+        super().__init__(input_size)
 
     @staticmethod
     def __rpn_graph(feature_map, anchors_per_location, anchor_stride):
@@ -124,7 +118,7 @@ class RPN(BaseModel):
 
         """
         input_gt_masks = keras_layer.Input(
-            shape=[self.__input_size[0], self.__input_size[1], None], name="input_gt_masks")
+            shape=[self._input_size[0], self._input_size[1], None], name="input_gt_masks")
 
         rpn = RPN.__build_rpn_model(self.__config.RPN_ANCHOR_STRIDE,
                                     len(self.__config.RPN_ANCHOR_RATIOS),
@@ -186,7 +180,7 @@ class RPN(BaseModel):
             inputs = [self.__img_input]
             outputs = [self.__mask_output, rpn_class, rpn_bbox]
 
-        self.__internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
+        self._internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
 
     def compile(self, *args, **kwargs):
         """ Compiles the model.
@@ -202,14 +196,14 @@ class RPN(BaseModel):
         loss_names = ["rpn_class_loss", "rpn_bbox_loss", "img_out_loss"]
 
         for name in loss_names:
-            layer = self.__internal_model.get_layer(name)
+            layer = self._internal_model.get_layer(name)
             loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
-            self.__internal_model.add_loss(loss)
-            self.__internal_model.add_metric(loss, name=name, aggregation='mean')
+            self._internal_model.add_loss(loss)
+            self._internal_model.add_metric(loss, name=name, aggregation='mean')
 
-        self.__internal_model.compile(*args, **kwargs,
-                                      optimizer=keras_opt.Adam(lr=self.__config.LEARNING_RATE),
-                                      loss=[None] * len(self.__internal_model.outputs))
+        self._internal_model.compile(*args, **kwargs,
+                                     optimizer=keras_opt.Adam(lr=self.__config.LEARNING_RATE),
+                                     loss=[None] * len(self._internal_model.outputs))
 
     def train(self, train_generator, val_generator, epochs: int, check_point_path: Union[str, None],
               callbacks=None, verbose=1, *args, **kwargs):
@@ -233,7 +227,11 @@ class RPN(BaseModel):
             raise ValueError(
                 f"Mode of the Neural network incorrect: instead of train the mode is {self.__mode}")
 
-        return super().train(train_generator, val_generator, epochs, steps_per_epoch, validation_steps,
+        steps_per_epoch = self.__config.STEPS_PER_EPOCH
+        validation_steps = self.__config.VALIDATION_STEPS
+
+        return super().train(train_generator, val_generator, epochs, steps_per_epoch,
+                             validation_steps,
                              check_point_path, callbacks, verbose)
 
     def predict(self, *args, **kwargs):
@@ -255,7 +253,7 @@ class RPN(BaseModel):
             raise EnvironmentError("This method only can be called if the Mode is set to inference")
 
         pred_threshold = self.__config.PRED_THRESHOLD
-        prediction = self.__internal_model.predict(*args, **kwargs)
+        prediction = self._internal_model.predict(*args, **kwargs)
 
         if not self.__config.RAW_PREDICTION:
             masks, cls, bboxes = prediction
