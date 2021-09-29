@@ -13,6 +13,8 @@ import tensorflow.keras.layers as keras_layer
 from tensorflow.keras.optimizers import *
 import tensorflow as tf
 
+from u_cells.model.base_model import BaseModel
+
 
 class ConvBlock(keras_layer.Layer):
     """ Convolutional block used on the encoder
@@ -143,27 +145,24 @@ class CropConcatBlock(keras_layer.Layer):
         width_diff = (x1_shape[2] - x2_shape[2]) // 2
 
         down_layer_cropped = down_layer[:, height_diff: (x2_shape[1] + height_diff),
-                                        width_diff: (x2_shape[2] + width_diff), :]
+                             width_diff: (x2_shape[2] + width_diff), :]
 
         x = tf.concat([down_layer_cropped, x], axis=-1)
         return x
 
 
-class UNet:
+class UNet(BaseModel):
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]], out_channel: int,
                  batch_normalization: bool, residual: bool = False):
-
-        self.__input_size: Tuple[int, int, int] = input_size
         self.__batch_normalization: bool = batch_normalization
         self.__n_channels: int = out_channel
         self.__residual = residual
 
-        self.__internal_model = None
-        self.__history = None
+        super().__init__(input_size)
 
-    def build_unet(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
-                   layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
-                   pool_size: Tuple[int, int] = (2, 2)):
+    def build(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
+              layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
+              pool_size: Tuple[int, int] = (2, 2)):
         """ Builds the graph and model for the U-Net.
 
         The U-Net, first introduced by Ronnenberger et al., is an encoder-decoder architecture.
@@ -179,7 +178,7 @@ class UNet:
 
         """
         # Define input batch shape
-        input_image = keras_layer.Input(self.__input_size, name="input_image")
+        input_image = keras_layer.Input(self._input_size, name="input_image")
         encoder = {}
 
         conv_params = dict(filters=n_filters,
@@ -203,7 +202,7 @@ class UNet:
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
             x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters * (2 ** layer_idx),
-                            activation='relu', residual=self.__residual)(x)
+                            activation='relu')(x)
             x = CropConcatBlock()(x, encoder[layer_idx])
             x = ConvBlock(layer_idx, **conv_params)(x)
 
@@ -213,7 +212,7 @@ class UNet:
 
         model = keras_model.Model(inputs=input_image, outputs=mask_out)
 
-        self.__internal_model = model
+        self._internal_model = model
 
         return input_image, encoder, mask_out
 
@@ -233,77 +232,5 @@ class UNet:
         """
         loss_functions = {"img_out": loss_func}
 
-        self.__internal_model.compile(*args, **kwargs, optimizer=Adam(lr=learning_rate),
-                                      loss=loss_functions, metrics=['categorical_accuracy'])
-
-    def train(self, train_generator, val_generator, epochs: int, steps_per_epoch: int,
-              validation_steps: int, check_point_path: Union[str, None], callbacks=None, verbose=1,
-              *args, **kwargs):
-        """ Trains the model with the info passed as parameters.
-
-        The keras model is trained with the information passed as parameters. The info is defined
-        on Config class or instead passed as parameters.
-
-        Args:
-            train_generator:
-            val_generator:
-            epochs:
-            steps_per_epoch:
-            validation_steps:
-            check_point_path:
-            callbacks:
-            verbose:
-
-        Returns:
-
-        """
-        if self.__history is not None:
-            warnings.warn("Model already trained, starting new training")
-
-        if callbacks is None:
-            callbacks = []
-
-        if check_point_path is not None:
-            callbacks.append(tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
-                                                                save_weights_only=False,
-                                                                save_best_only=True))
-
-        if val_generator is not None:
-            history = self.__internal_model.fit(train_generator, validation_data=val_generator,
-                                                epochs=epochs,
-                                                validation_steps=validation_steps,
-                                                callbacks=callbacks,
-                                                steps_per_epoch=steps_per_epoch,
-                                                verbose=verbose, *args, **kwargs)
-        else:
-            history = self.__internal_model.fit(train_generator, epochs=epochs,
-                                                callbacks=callbacks, verbose=verbose,
-                                                steps_per_epoch=steps_per_epoch, *args,
-                                                **kwargs)
-
-        self.__history = history
-
-    def load_weight(self, path: str):
-        self.__internal_model.load_weights(path)
-
-    @property
-    def model(self):
-        return self.__internal_model
-
-    @property
-    def history(self):
-        return self.__history
-
-    def get_layer(self, *args, **kwargs):
-        """ Wrapper of the Keras get_layer function.
-        """
-        return self.__internal_model.get_layer(*args, **kwargs)
-
-    def predict(self, *args, **kwargs):
-        """ Infer the value from the Model, wrapper method of the keras predict.
-
-        """
-        return self.__internal_model.predict(*args, **kwargs)
-
-    def summary(self):
-        self.__internal_model.summary()
+        self._internal_model.compile(*args, **kwargs, optimizer=Adam(lr=learning_rate),
+                                     loss=loss_functions, metrics=['categorical_accuracy'])

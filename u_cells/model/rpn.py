@@ -16,6 +16,7 @@ import tensorflow.keras.optimizers as keras_opt
 import tensorflow as tf
 
 from u_cells.common import losses as own_losses
+from u_cells.model.base_model import BaseModel
 
 
 class NeuralMode(enum.Enum):
@@ -24,7 +25,7 @@ class NeuralMode(enum.Enum):
     TRAIN = 1
 
 
-class RPN:
+class RPN(BaseModel):
 
     def __init__(self, mode: NeuralMode, input_size: Tuple[int, int, int], feature_layer,
                  feature_depth: Union[int, float], mask_output, img_input, config):
@@ -113,7 +114,7 @@ class RPN:
 
         return keras_model.Model([input_feature_map], outputs, name="rpn_model")
 
-    def build_model(self):
+    def build(self):
         """ Builds the model.
 
         The RPN model building is done by the combination of the output of a backbone model. This
@@ -232,34 +233,8 @@ class RPN:
             raise ValueError(
                 f"Mode of the Neural network incorrect: instead of train the mode is {self.__mode}")
 
-        if self.__history is not None:
-            warnings.warn("Model already trained, starting new training")
-
-        steps_per_epoch = self.__config.STEPS_PER_EPOCH
-        validation_steps = self.__config.VALIDATION_STEPS
-
-        if callbacks is None:
-            callbacks = []
-
-        if check_point_path is not None:
-            callbacks.append(tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
-                                                                save_weights_only=False,
-                                                                save_best_only=True))
-
-        if val_generator is not None:
-            history = self.__internal_model.fit(train_generator, validation_data=val_generator,
-                                                epochs=epochs,
-                                                validation_steps=validation_steps,
-                                                callbacks=callbacks,
-                                                steps_per_epoch=steps_per_epoch,
-                                                verbose=verbose, *args, **kwargs)
-        else:
-            history = self.__internal_model.fit(train_generator, epochs=epochs,
-                                                callbacks=callbacks, verbose=verbose,
-                                                steps_per_epoch=steps_per_epoch, *args,
-                                                **kwargs)
-
-        self.__history = history
+        return super().train(train_generator, val_generator, epochs, steps_per_epoch, validation_steps,
+                             check_point_path, callbacks, verbose)
 
     def predict(self, *args, **kwargs):
         """ Infer the value from the Model.
@@ -296,9 +271,6 @@ class RPN:
             prediction = [masks, bboxes_pred]
 
         return prediction
-
-    def load_weights(self, path: str):
-        self.__internal_model.load_weights(path)
 
     @staticmethod
     def features_2_rpn(features, depth: int):
