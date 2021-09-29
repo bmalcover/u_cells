@@ -157,7 +157,7 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
             json.dump(region_out, outfile)
 
 
-def non_max_suppression_fast(boxes, overlap_thresh):
+def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort = False):
     # if there are no boxes, return an empty list
     if len(boxes) == 0:
         return []
@@ -175,8 +175,17 @@ def non_max_suppression_fast(boxes, overlap_thresh):
     # compute the area of the bounding boxes and sort the bounding
     # boxes by the bottom-right y-coordinate of the bounding box
     area = (x2 - x1 + 1) * (y2 - y1 + 1)
-    idxs = np.argsort(y2)
-    # keep looping while some indexes still remain in the indexes
+
+    if sort_val is None:
+        idxs = np.argsort(y2)
+    else:
+        assert len(sort_val) == len(y2), "Sort value size should be equal to the number of bboxes"
+        idxs = np.argsort(sort_val)
+        # keep looping while some indexes still remain in the indexes
+
+    if reverse_sort:
+        idxs = idxs[::-1]
+
     # list
     while len(idxs) > 0:
         # grab the last index in the indexes list and add the
