@@ -46,7 +46,7 @@ class BaseModel(ABC):
         Returns:
             History: History of the training, containing metrics by epoch
         """
-        if self._internal_model:
+        if self._internal_model is None:
             raise ValueError("Before training the model should be build and compiled")
 
         if self._history is not None:
