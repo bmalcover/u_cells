@@ -154,11 +154,11 @@ class CropConcatBlock(keras_layer.Layer):
 class UNet(BaseModel):
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]], out_channel: int,
                  batch_normalization: bool, residual: bool = False):
+        super().__init__(input_size)
+
         self.__batch_normalization: bool = batch_normalization
         self.__n_channels: int = out_channel
         self.__residual = residual
-
-        super().__init__(input_size)
 
     def build(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
               layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
@@ -177,44 +177,28 @@ class UNet(BaseModel):
             pool_size:
 
         """
-        # Define input batch shape
-        input_image = keras_layer.Input(self._input_size, name="input_image")
-        encoder = {}
+        self._layers = {}
 
-        conv_params = dict(filters=n_filters,
-                           kernel_size=kernel_size,
-                           activation='relu',
-                           residual=self.__residual,
-                           batch_normalization=True)
+        encoder = EncoderUNet(input_size=self._input_size, residual=self.__residual)
+        input_image, embedded = encoder.build(n_filters=n_filters, last_activation=last_activation,
+                                              pool_size=pool_size, dilation_rate=dilation_rate,
+                                              layer_depth=layer_depth, kernel_size=kernel_size)
 
-        x = input_image
-        layer_idx = 0
+        self._layers['encoder'] = encoder
 
-        for layer_idx in range(0, layer_depth):
-            conv_params['filters'] = n_filters * (2 ** layer_idx)
+        decoder = DecoderUNet(input_size=self._input_size, residual=self.__residual,
+                              n_channels=self.__n_channels)
+        mask_out = decoder.build(n_filters=n_filters, last_activation=last_activation,
+                                 encoder=encoder, dilation_rate=dilation_rate,
+                                 kernel_size=kernel_size, embedded=embedded)
 
-            x = ConvBlock(layer_idx, **conv_params)(x)
-            encoder[layer_idx] = x
-
-            x = keras_layer.MaxPooling2D(pool_size)(x)
-
-        for layer_idx in range(layer_idx, -1, -1):
-            conv_params['filters'] = n_filters * (2 ** layer_idx)
-
-            x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters * (2 ** layer_idx),
-                            activation='relu')(x)
-            x = CropConcatBlock()(x, encoder[layer_idx])
-            x = ConvBlock(layer_idx, **conv_params)(x)
-
-        mask_out = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
-                                      padding='same', dilation_rate=dilation_rate,
-                                      kernel_initializer='he_normal', name="img_out")(x)
+        self._layers['decoder'] = decoder
 
         model = keras_model.Model(inputs=input_image, outputs=mask_out)
 
         self._internal_model = model
 
-        return input_image, encoder, mask_out
+        return input_image, encoder, decoder
 
     def compile(self, loss_func: Union[str, Callable] = "categorical_crossentropy",
                 learning_rate: Union[int, float] = 3e-5, *args, **kwargs):
@@ -234,3 +218,84 @@ class UNet(BaseModel):
 
         self._internal_model.compile(*args, **kwargs, optimizer=Adam(lr=learning_rate),
                                      loss=loss_functions, metrics=['categorical_accuracy'])
+
+
+class EncoderUNet(BaseModel):
+    def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]],
+                 residual: bool = False):
+        super().__init__(input_size)
+
+        self.__residual = residual
+        self._layers = None
+
+    def compile(self, *args, **kwargs):
+        pass
+
+    def build(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
+              layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
+              pool_size: Tuple[int, int] = (2, 2)):
+        # Define input batch shape
+        input_image = keras_layer.Input(self._input_size, name="input_image")
+        self._layers = {}
+
+        conv_params = dict(filters=n_filters,
+                           kernel_size=kernel_size,
+                           activation='relu',
+                           residual=self.__residual,
+                           batch_normalization=True)
+
+        x = input_image
+
+        for layer_idx in range(0, layer_depth):
+            conv_params['filters'] = n_filters * (2 ** layer_idx)
+
+            x = ConvBlock(layer_idx, **conv_params)(x)
+            self._layers[layer_idx] = x
+
+            x = keras_layer.MaxPooling2D(pool_size)(x)
+
+        return input_image, x
+
+
+class DecoderUNet(BaseModel):
+    def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]],
+                 n_channels: int = 1, residual: bool = False):
+        super().__init__(input_size)
+
+        self.__residual = residual
+        self.__n_channels = n_channels
+
+    def build(self, n_filters, last_activation: Union[Callable, str], encoder: EncoderUNet,
+              embedded, extra_layer: dict = None, dilation_rate: int = 1,
+              kernel_size: Tuple[int, int] = (3, 3)):
+        conv_params = dict(filters=n_filters,
+                           kernel_size=kernel_size,
+                           activation='relu',
+                           residual=self.__residual,
+                           batch_normalization=True)
+
+        self._layers = {}
+        x = embedded
+        for layer_idx in range(len(encoder) - 1, -1, -1):
+            conv_params['filters'] = n_filters * (2 ** layer_idx)
+
+            x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters * (2 ** layer_idx),
+                            activation='relu')(x)
+
+            encoder_layer = encoder[layer_idx]
+            if extra_layer is not None and layer_idx in extra_layer:
+                encoder_layer = tf.concat([encoder_layer, extra_layer[layer_idx]], axis=-1)
+
+            x = CropConcatBlock()(x, encoder_layer)
+            x = ConvBlock(layer_idx, **conv_params)(x)
+
+            self._layers[layer_idx] = x
+
+        out = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
+                                 padding='same', dilation_rate=dilation_rate,
+                                 kernel_initializer='he_normal', name="img_out")(x)
+
+        return out
+
+    def compile(self, *args, **kwargs):
+        pass

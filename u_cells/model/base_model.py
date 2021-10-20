@@ -11,6 +11,7 @@ class BaseModel(ABC):
 
         self._internal_model = None
         self._history = None
+        self._layers = None
 
     @property
     def history(self):
@@ -91,3 +92,18 @@ class BaseModel(ABC):
 
     def load_weights(self, path: str):
         self._internal_model.load_weights(path)
+
+    def __len__(self):
+        length = len(self._layers.keys()) if self._layers is not None else 0
+
+        return length
+
+    def __getitem__(self, key):
+        if key not in self._layers:
+            raise KeyError
+
+        return self._layers[key]
+
+    @property
+    def layers(self):
+        return self._layers if self._layers is not None else {}
