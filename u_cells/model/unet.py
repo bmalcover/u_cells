@@ -6,7 +6,6 @@ proposed by Ronnenberger et al. and is based on a Encoder-Decoder architecture.
 """
 
 from typing import Callable, Union, Tuple
-import warnings
 
 import tensorflow.keras.models as keras_model
 import tensorflow.keras.layers as keras_layer
@@ -229,7 +228,7 @@ class EncoderUNet(BaseModel):
         self._layers = None
 
     def compile(self, *args, **kwargs):
-        pass
+        raise NotImplementedError
 
     def build(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
               layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
@@ -298,4 +297,4 @@ class DecoderUNet(BaseModel):
         return out
 
     def compile(self, *args, **kwargs):
-        pass
+        raise NotImplementedError
