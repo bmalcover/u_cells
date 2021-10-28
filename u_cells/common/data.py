@@ -160,7 +160,8 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
             json.dump(region_out, outfile)
 
 
-def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort=False):
+def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort=False,
+                             ret_sort_val: bool = False):
     """ Non Maximum Suppression implementation.
 
     Non Maximum Suppression (NMS) is a technique used in numerous computer vision tasks. It is a
@@ -174,6 +175,7 @@ def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort=
         overlap_thresh:
         sort_val:
         reverse_sort:
+        ret_sort_val:
 
     Returns:
 
@@ -230,4 +232,7 @@ def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort=
                                                np.where(overlap > overlap_thresh)[0])))
     # return only the bounding boxes that were picked using the
     # integer data type
-    return boxes[pick].astype("int")
+    if not ret_sort_val:
+        return boxes[pick].astype("int")
+    else:
+        return boxes[pick].astype("int"), sort_val[pick]

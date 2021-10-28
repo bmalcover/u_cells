@@ -485,6 +485,9 @@ class DataGenerator(KU.Sequence):
         """Load and return ground truth data for an image (image, mask, bounding boxes).
 
         Args:
+            dataset:
+            config:
+            image_id:
             augmentation: Optional. An imgaug (https://github.com/aleju/imgaug) augmentation.
                           For example, passing imgaug.augmenters.Fliplr(0.5) flips images right/left
                           50% of the time.
