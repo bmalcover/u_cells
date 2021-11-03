@@ -8,7 +8,7 @@ from typing import Union
 import numpy as np
 from sklearn import metrics
 
-from u_cells.common import utils
+from . import utils
 
 Num = Union[int, float]
 

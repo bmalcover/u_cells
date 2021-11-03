@@ -136,6 +136,10 @@ class Config(ABC):
 
     RAW_PREDICTION = True
 
+    RANDOM_MASKS = False
+
+    MAKE_BACKGROUND_MASK = False
+
     def __init__(self):
         """Set values of computed attributes."""
 

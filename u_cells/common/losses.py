@@ -6,19 +6,27 @@ import tensorflow.keras.backend as keras
 import tensorflow as tf
 
 
-def onw_dice_coef(y_true, y_pred, smooth=1):
-    """
+def onw_dice_coefficient(y_true, y_pred, smooth=1):
+    """ Computes the Sørensen–Dice coefficient for the batch of images.
+
     Dice = (2*|X & Y|)/ (|X|+ |Y|)
-         =  2*sum(|A*B|)/(sum(A^2)+sum(B^2))
-    ref: https://arxiv.org/pdf/1606.04797v1.pdf
+        =  2*sum(|A*B|)/(sum(A^2)+sum(B^2))
+
+    Args:
+        y_true: Batch of ground truth masks.
+        y_pred: Batch of predicted masks.
+        smooth: Smoothing factor. It adds to the numerator and denominator (intersection and union).
+
+    Refs:
+        https://arxiv.org/pdf/1606.04797v1.pdf
     """
     intersection = keras.sum(keras.abs(y_true * y_pred), axis=-1)
     return (2. * intersection + smooth) / (
             keras.sum(keras.square(y_true), -1) + keras.sum(keras.square(y_pred), -1) + smooth)
 
 
-def own_dice_coef_loss(y_true, y_pred):
-    return 1 - onw_dice_coef(y_true, y_pred)
+def own_dice_coefficient_loss(y_true, y_pred):
+    return 1 - onw_dice_coefficient(y_true, y_pred)
 
 
 def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[
@@ -38,7 +46,6 @@ def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tens
 
     def loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         """ Compute weighted Dice loss.
-
 
         Args:
             y_true: True masks (tf.Tensor, shape=(<BATCH_SIZE>, <IMAGE_HEIGHT>, <IMAGE_WIDTH>,
@@ -65,7 +72,9 @@ def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tens
 
 def dice_coef_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5,
                    mean: bool = True):
-    """ Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
+    """ Dice coefficient loss function.
+
+    Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
     of two batch of data, usually be used for binary image segmentation
     i.e. labels are binary. The coefficient between 0 to 1, 1 means totally match.
 
@@ -111,12 +120,13 @@ def positive_cce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 
     To calculate the loss only takes into consideration the channels with some value different to 0
     in the ground truth.
+
     Args:
         y_true (tf.Tensor):
         y_pred (tf.Tensor):
 
     Returns:
-
+        Positive CCE loss (tf.Tensor, shape=(None,))
     """
     zero_values = tf.reduce_sum(y_true, -1)
     zero_values = tf.reduce_sum(zero_values, -1)
@@ -144,11 +154,11 @@ def smooth_l1_loss(y_true, y_pred):
     y_true and y_pred are typically: [N, 4], but could be any shape.
 
     Args:
-        y_true:
-        y_pred:
+        y_true: Ground truth bounding boxes, e.g. [None, 4] for [x1, y1, x2, y2]
+        y_pred: Predicted bounding boxes, e.g. [None, 4] for [x1, y1, x2, y2]
 
     Returns:
-
+        Smooth-L1 Loss value.
     """
     diff = keras.abs(y_true - y_pred)
     less_than_one = keras.cast(keras.less(diff, 1.0), "float32")
@@ -205,16 +215,34 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     target_masks = keras.reshape(target_masks, (-1, mask_shape[2], mask_shape[3]))
     pred_masks = keras.reshape(pred_masks, (-1, mask_shape[2], mask_shape[3]))
 
-    # Only positive ROIs contribute to the loss. And only
-    # the class specific mask of each ROI.
+    # Only positive ROIs contribute to the loss. And only the class specific mask of each ROI.
     positive_ix = tf.compat.v1.where(target_class_ids > 0)[:, 0]
 
     # Gather the masks (predicted and true) that contribute to loss
     y_true = tf.gather(target_masks, positive_ix)
     y_pred = tf.gather(pred_masks, positive_ix)
 
+    # Balanced the mask and the prediction with the same number of positive and negative samples
+    y_true = tf.reshape(y_true, (-1,))
+    y_pred = tf.reshape(y_pred, (-1,))
+
+    positive_px = tf.compat.v1.where(y_true > 0)
+
+    negative_px = tf.compat.v1.where(y_true == 0)
+    negative_px = tf.random.shuffle(negative_px)[:tf.size(positive_px)]
+
+    y_true_pos = tf.gather(y_true, positive_px)
+    y_pred_pos = tf.gather(y_pred, positive_px)
+
+    y_true_neg = tf.gather(y_true, negative_px)
+    y_pred_neg = tf.gather(y_pred, negative_px)
+
+    y_true = tf.concat([y_true_pos, y_true_neg], axis=-1)
+    y_pred = tf.concat([y_pred_pos, y_pred_neg], axis=-1)
+
     # Compute binary cross entropy. If no positive ROIs, then return 0.
     # shape: [batch, roi, num_classes]
+
     loss = keras.switch(tf.size(input=y_true) > 0,
                         keras.binary_crossentropy(target=y_true, output=y_pred),
                         tf.constant(0.0))

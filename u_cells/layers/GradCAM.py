@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-""" Module containing a set of own build layers """
+""" Module containing a set of own build layers
+
+Written by: Miquel Miró Nicolau (UIB)
+"""
 
 import tensorflow as tf
 import tensorflow.keras.layers as keras_layer
@@ -16,10 +19,23 @@ class GradCAM(keras_layer.Layer):
          This layer will fail if between the two connected layer there are some layer without
          gradient (a.k.a UpSampling2D).
     """
-    def call(self, input_layer, conv_layer, output_layer, *args, **kwargs):
-        grads = keras_layer.Lambda(lambda x: tf.gradients(x[1], x[0],
-                                                          unconnected_gradients='zero'),
-                                   name="Grads")([conv_layer, output_layer])
+
+    @tf.function
+    def call(self, conv_layer, output_layer, *args, **kwargs):
+        """ Calculate the gradient of the output_layer with respect to the conv_layer
+
+        Args:
+            conv_layer:
+            output_layer:
+            *args:
+            **kwargs:
+
+        Returns:
+            GradCAM layer
+        """
+        grads = keras_layer.Lambda(
+            lambda x: tf.gradients(x[1], x[0], unconnected_gradients='zero'))(
+            [conv_layer, output_layer])
 
         # This is a vector where each entry is the mean intensity of the gradient over a specific
         # feature map channel

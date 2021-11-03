@@ -14,8 +14,8 @@ import tensorflow.keras.layers as keras_layer
 import tensorflow.keras.optimizers as keras_opt
 import tensorflow as tf
 
-from u_cells.common import losses as own_losses
-from u_cells.model.base_model import BaseModel
+from ..common import losses as own_losses
+from ..model.base_model import BaseModel
 
 
 class NeuralMode(enum.Enum):
@@ -41,7 +41,7 @@ class RPN(BaseModel):
 
     @staticmethod
     def __rpn_graph(feature_map, anchors_per_location, anchor_stride):
-        """Builds the computation graph of Region Proposal Network.
+        """ Builds the computation graph of Region Proposal Network.
 
         Args:
             feature_map: backbone features [batch, height, width, depth]
@@ -115,6 +115,14 @@ class RPN(BaseModel):
             return outputs, shared
 
     def build_rpn(self, input_size, connection_layer=None):
+        """ Builds the Region Proposal Network.
+
+        Args:
+            input_size: Input size of the feature map.
+            connection_layer: The layer to connect the RPN to.
+        Returns:
+
+        """
         input_gt_masks = keras_layer.Input(
             shape=[input_size[0], input_size[1], None], name="input_gt_masks")
 
@@ -146,11 +154,21 @@ class RPN(BaseModel):
 
         return input_gt_masks, (rpn_class_logits, rpn_class, rpn_bbox), rpn_conv
 
-    def build(self, input_gt_masks=None, rpn=None, mask_output=None, *args, **kwargs):
+    def build(self, input_gt_masks=None, rpn=None, mask_output=None, do_mask=True, mask_loss=None,
+              *args, **kwargs):
         """ Builds the model.
 
         The RPN model building is done by the combination of the output of a backbone model. This
         backbone model had been passed previously in the constructor.
+
+        Args:
+            input_gt_masks: Input tensor of ground truth masks.
+            rpn: Output of the RPN model.
+            do_mask: Boolean if true, the model will build the mask branch.
+            mask_output: Output of the mask model.
+            mask_loss: Loss function of the mask output.
+            *args: Additional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
 
@@ -172,6 +190,11 @@ class RPN(BaseModel):
             input_gt_class_ids = keras_layer.Input(shape=[None], name="input_gt_class_ids",
                                                    dtype=tf.int32)
 
+            if do_mask:
+                mask_loss = mask_loss if mask_loss is not None else own_losses.mrcnn_mask_loss_graph
+                mask_loss = keras_layer.Lambda(lambda x: mask_loss(*x), name="img_out_loss")(
+                    [input_gt_masks, input_gt_class_ids, mask_output])
+
             # RPN Loss
             rpn_class_loss = keras_layer.Lambda(lambda x: own_losses.class_loss_graph(*x),
                                                 name="rpn_class_loss")(
@@ -180,21 +203,18 @@ class RPN(BaseModel):
                                                name="rpn_bbox_loss")(
                 [input_rpn_bbox, input_rpn_match, rpn_bbox, self.__config.BATCH_SIZE])
 
-            mask_loss = keras_layer.Lambda(lambda x: own_losses.mrcnn_mask_loss_graph(*x),
-                                           name="img_out_loss")(
-                [input_gt_masks, input_gt_class_ids, mask_output])
-
             # Input of the model
             inputs = [self.__img_input, input_gt_masks, input_rpn_match, input_rpn_bbox,
                       input_gt_class_ids]
 
             # Output of the model
-            outputs = [mask_output,
-                       mask_loss,
-                       rpn_class,
+            outputs = [rpn_class,
                        rpn_bbox,
                        rpn_class_loss,
                        rpn_bbox_loss]
+            if do_mask:
+                inputs.insert(1, input_gt_masks)
+                outputs = [mask_output, mask_loss] + outputs
 
         else:
             # Create masks for detections
@@ -210,9 +230,8 @@ class RPN(BaseModel):
         vanilla U-Net this function works as wrapper for the keras.model compile method.
 
         Args:
-            None
-        Returns:
-            None
+            *args: Additional arguments.
+            **kwargs: Additional keyword arguments.
         """
         loss_names = ["rpn_class_loss", "rpn_bbox_loss", "img_out_loss"]
 
@@ -234,15 +253,14 @@ class RPN(BaseModel):
         on Config class or instead passed as parameters.
 
         Args:
-            train_generator:
-            val_generator:
-            epochs (int):
-            check_point_path (str):
-            callbacks:
-            verbose (int):
-
+            train_generator: Generator for the training data.
+            val_generator: Generator for the validation data.
+            epochs (int): Number of epochs to train the model.
+            check_point_path (str): Path to the file where the model will be saved.
+            callbacks: List of callbacks to be used during the training.
+            verbose (int): Verbosity mode.
         Returns:
-
+            History of the training.
         """
         if self.__mode is not NeuralMode.TRAIN:
             raise ValueError(
@@ -264,8 +282,8 @@ class RPN(BaseModel):
         threshold defined on the config object.
 
         Args:
-            *args:
-            **kwargs:
+            *args: Additional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
 
@@ -300,7 +318,7 @@ class RPN(BaseModel):
             depth (int): Depth of the resulting layers.
 
         Returns:
-
+            list: List of layers that represent a set o features of different size
         """
         rpn_features = []
 

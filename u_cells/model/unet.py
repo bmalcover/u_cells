@@ -12,7 +12,8 @@ import tensorflow.keras.layers as keras_layer
 from tensorflow.keras.optimizers import *
 import tensorflow as tf
 
-from u_cells.model.base_model import BaseModel
+from ..model.base_model import BaseModel
+from .. import layers as own_layer
 
 
 class ConvBlock(keras_layer.Layer):
@@ -22,7 +23,8 @@ class ConvBlock(keras_layer.Layer):
 
     def __init__(self, layer_idx: int, filters: int, kernel_size: Tuple[int, int], activation: str,
                  kernel_initializer: str = 'he_normal', padding: str = "same",
-                 residual: bool = False, batch_normalization: bool = False, **kwargs):
+                 coord_conv=None, residual: bool = False, batch_normalization: bool = False,
+                 **kwargs):
         super(ConvBlock, self).__init__(**kwargs)
 
         self.__layer_idx: int = layer_idx
@@ -33,6 +35,7 @@ class ConvBlock(keras_layer.Layer):
         self.__padding: str = padding
         self.__is_batch_normalized: bool = batch_normalization
         self.__residual = residual
+        self.__coord_conv = coord_conv
 
         self.conv2d_1 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
                                            kernel_initializer=kernel_initializer, padding=padding,
@@ -41,9 +44,17 @@ class ConvBlock(keras_layer.Layer):
         if batch_normalization:
             self.batch_normalization_1 = keras_layer.BatchNormalization()
 
-        self.conv2d_2 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
-                                           kernel_initializer=kernel_initializer, padding=padding,
-                                           activation=activation)
+        if coord_conv is not None:
+            self.conv2d_2 = own_layer.CoordConv(x_dim=coord_conv[0], y_dim=coord_conv[1],
+                                                filters=filters, kernel_size=kernel_size,
+                                                kernel_initializer=kernel_initializer,
+                                                padding=padding,
+                                                activation=activation)
+        else:
+            self.conv2d_2 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
+                                               kernel_initializer=kernel_initializer,
+                                               padding=padding,
+                                               activation=activation)
         self.batch_normalization_2 = keras_layer.BatchNormalization()
 
         self.shortcut = keras_layer.Conv2D(filters, (1, 1), padding=padding)
@@ -59,7 +70,8 @@ class ConvBlock(keras_layer.Layer):
             'kernel_initializer': self.__kernel_initializer,
             'padding': self.__padding,
             'batch_normalization': self.__is_batch_normalized,
-            'residual': self.__residual
+            'residual': self.__residual,
+            'coord_conv': self.__coord_conv
         })
         return config
 
@@ -266,7 +278,7 @@ class DecoderUNet(BaseModel):
 
     def build(self, n_filters, last_activation: Union[Callable, str], encoder: EncoderUNet,
               embedded, extra_layer: dict = None, dilation_rate: int = 1,
-              kernel_size: Tuple[int, int] = (3, 3)):
+              kernel_size: Tuple[int, int] = (3, 3), coord_conv=None):
         conv_params = dict(filters=n_filters,
                            kernel_size=kernel_size,
                            activation='relu',
@@ -286,7 +298,12 @@ class DecoderUNet(BaseModel):
                 encoder_layer = tf.concat([encoder_layer, extra_layer[layer_idx]], axis=-1)
 
             x = CropConcatBlock()(x, encoder_layer)
-            x = ConvBlock(layer_idx, **conv_params)(x)
+
+            coord_conv_size = None
+            if coord_conv is not None and layer_idx in coord_conv:
+                coord_conv_size = coord_conv[layer_idx]
+
+            x = ConvBlock(layer_idx, coord_conv=coord_conv_size, **conv_params)(x)
 
             self._layers[layer_idx] = x
 

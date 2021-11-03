@@ -1,3 +1,11 @@
+""" This module contains a base model class.
+
+The base model class is used to define the basic structure of a model. Is used to build the RPN
+model and the U-Net model.
+
+Written by Miquel Miró (UIB), 2021
+"""
+
 import warnings
 from abc import ABC
 from typing import Union, Tuple
@@ -6,6 +14,14 @@ import tensorflow as tf
 
 
 class BaseModel(ABC):
+    """ Base model class.
+
+    The base model class is used to define the basic structure of a model. Is used to build the RPN
+    model and the U-Net model.
+
+    Params:
+        input_size (Tuple[int, int] | Tuple[int, int, int]): The input size of the model.
+    """
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]]):
         self._input_size = input_size
 
@@ -15,10 +31,20 @@ class BaseModel(ABC):
 
     @property
     def history(self):
+        """ Returns the history of the training.
+
+        Returns:
+            History: History of the training, containing metrics by epoch
+        """
         return self._history
 
     @property
     def internal_model(self):
+        """ Returns the keras model used as backbone of the class.
+
+        Returns:
+            Model: Keras model used as backbone of the class.
+        """
         return self._internal_model
 
     def build(self, *args, **kwargs):
@@ -32,17 +58,19 @@ class BaseModel(ABC):
               *args, **kwargs):
         """ Trains the model with the info passed as parameters.
 
-        The keras model is trained with the information passed as parameters.
+        The keras model is trained with the information passed as parameters. This method wraps the
+        training method of the keras model. At the end of the training, the history of the training
+        is saved into the history attribute of the model.
 
         Args:
-            train_generator:
-            val_generator:
-            epochs:
-            steps_per_epoch:
-            validation_steps:
-            check_point_path:
-            callbacks:
-            verbose:
+            train_generator: The training data generator.
+            val_generator: The validation data generator.
+            epochs: The number of epochs to train the model.
+            steps_per_epoch: The number of steps per epoch.
+            validation_steps: The number of steps per validation.
+            check_point_path: Save the model after each epoch.
+            callbacks: The callbacks to use during the training.
+            verbose: If true, print the training information.
 
         Returns:
             History: History of the training, containing metrics by epoch
