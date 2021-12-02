@@ -204,7 +204,7 @@ class RPN(BaseModel):
                 [input_rpn_bbox, input_rpn_match, rpn_bbox, self.__config.BATCH_SIZE])
 
             # Input of the model
-            inputs = [self.__img_input, input_gt_masks, input_rpn_match, input_rpn_bbox,
+            inputs = [self.__img_input, input_rpn_match, input_rpn_bbox,
                       input_gt_class_ids]
 
             # Output of the model
