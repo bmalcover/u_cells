@@ -22,6 +22,7 @@ class BaseModel(ABC):
     Params:
         input_size (Tuple[int, int] | Tuple[int, int, int]): The input size of the model.
     """
+
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]]):
         self._input_size = input_size
 
@@ -119,7 +120,7 @@ class BaseModel(ABC):
         self._internal_model.summary()
 
     def load_weights(self, path: str):
-        self._internal_model.load_weights(path)
+        self._internal_model.load_weights(path, by_name=True)
 
     def __len__(self):
         length = len(self._layers.keys()) if self._layers is not None else 0

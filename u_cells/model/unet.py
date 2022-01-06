@@ -260,10 +260,10 @@ class EncoderUNet(BaseModel):
         for layer_idx in range(0, layer_depth):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
-            x = ConvBlock(layer_idx, **conv_params)(x)
+            x = ConvBlock(layer_idx, name=f"e_conv_block_{layer_idx}", **conv_params)(x)
             self._layers[layer_idx] = x
 
-            x = keras_layer.MaxPooling2D(pool_size)(x)
+            x = keras_layer.MaxPooling2D(pool_size, name=f"e_max_pool_{layer_idx}")(x)
 
         return input_image, x
 
@@ -291,19 +291,24 @@ class DecoderUNet(BaseModel):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
             x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters * (2 ** layer_idx),
-                            activation='relu')(x)
+                            activation='relu', name=f"d_up_conv_block{layer_idx}")(x)
 
             encoder_layer = encoder[layer_idx]
             if extra_layer is not None and layer_idx in extra_layer:
-                encoder_layer = tf.concat([encoder_layer, extra_layer[layer_idx]], axis=-1)
+                encoder_layer = keras_layer.Concatenate(axis=-1,
+                                                        name=f"d_concatenate_extra_{layer_idx}")(
+                    [encoder_layer, extra_layer[layer_idx]])
 
-            x = CropConcatBlock()(x, encoder_layer)
+            x = keras_layer.Concatenate(axis=-1, name=f"d_concatenate_{layer_idx}")(
+                [x, encoder_layer])
+            # x = CropConcatBlock(name=f"d_crop_concat_block_{layer_idx}")(x, encoder_layer)
 
             coord_conv_size = None
             if coord_conv is not None and layer_idx in coord_conv:
                 coord_conv_size = coord_conv[layer_idx]
 
-            x = ConvBlock(layer_idx, coord_conv=coord_conv_size, **conv_params)(x)
+            x = ConvBlock(layer_idx, coord_conv=coord_conv_size, name=f"d_conv_block_{layer_idx}",
+                          **conv_params)(x)
 
             self._layers[layer_idx] = x
 

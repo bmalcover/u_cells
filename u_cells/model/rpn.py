@@ -62,12 +62,12 @@ class RPN(BaseModel):
 
         # Anchor Score. [batch, height, width, anchors per location * 2].
         anchor_score = keras_layer.Conv2D(2 * anchors_per_location, (1, 1), padding='valid',
-                                          activation='linear',
-                                          name='rpn_class_raw')(shared)
+                                          activation='linear', name='rpn_class_raw')(shared)
 
         # Reshape to [batch, anchors, 2]
         rpn_class_logits = keras_layer.Lambda(
-            lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 2]))(anchor_score)
+            lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 2]), name="rpn_class_reshape")(
+            anchor_score)
 
         # Softmax on last dimension of BG/FG.
         rpn_probs = keras_layer.Activation(
@@ -79,7 +79,8 @@ class RPN(BaseModel):
                                   activation='linear', name='rpn_bbox_pred')(shared)
 
         # Reshape to [batch, anchors, 4]
-        rpn_bbox = keras_layer.Lambda(lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 4]))(bbox)
+        rpn_bbox = keras_layer.Lambda(lambda t: tf.reshape(t, [tf.shape(input=t)[0], -1, 4]),
+                                      name="rpn_bbox_reshape")(bbox)
 
         return [rpn_class_logits, rpn_probs, rpn_bbox], shared
 
