@@ -292,8 +292,14 @@ class DataGenerator(KU.Sequence):
             batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             b += 1
 
-        inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
-        outputs = [np.zeros((4, 512, 512, 100))] + ([np.zeros((10, 10))] * 5)
+        if self.config.DO_MASK:
+            inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox,
+                      batch_gt_class_ids]
+        else:
+            inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
+
+        outputs = [np.zeros((4, 512, 512, 100))] + (
+                    [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
 
         return inputs, outputs
 

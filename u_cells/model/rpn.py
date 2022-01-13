@@ -192,9 +192,13 @@ class RPN(BaseModel):
                                                    dtype=tf.int32)
 
             if do_mask:
-                mask_loss = mask_loss if mask_loss is not None else own_losses.mrcnn_mask_loss_graph
-                mask_loss = keras_layer.Lambda(lambda x: mask_loss(*x), name="img_out_loss")(
-                    [input_gt_masks, input_gt_class_ids, mask_output])
+                if mask_loss is None:
+                    mask_loss = keras_layer.Lambda(lambda x: own_losses.mrcnn_mask_loss_graph(*x),
+                                                   name="img_out_loss")(
+                        [input_gt_masks, input_gt_class_ids, mask_output])
+                else:
+                    mask_loss = keras_layer.Lambda(lambda x: mask_loss(*x), name="img_out_loss")(
+                        [input_gt_masks, input_gt_class_ids, mask_output])
 
             # RPN Loss
             rpn_class_loss = keras_layer.Lambda(lambda x: own_losses.class_loss_graph(*x),
@@ -220,21 +224,27 @@ class RPN(BaseModel):
         else:
             # Create masks for detections
             inputs = [self.__img_input]
-            outputs = [mask_output, rpn_class, rpn_bbox]
+            outputs = [rpn_class, rpn_bbox]
+            if do_mask:
+                outputs = [mask_output] + outputs
 
         self._internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
 
-    def compile(self, *args, **kwargs):
+    def compile(self, do_mask=True, *args, **kwargs):
         """ Compiles the model.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
-        vanilla U-Net this function works as wrapper for the keras.model compile method.
+        vanilla U-Net this function works as wrapper for the keras model compile method.
 
         Args:
+            do_mask: Boolean if true, the model will compile the mask branch.
             *args: Additional arguments.
             **kwargs: Additional keyword arguments.
         """
-        loss_names = ["rpn_class_loss", "rpn_bbox_loss", "img_out_loss"]
+        loss_names = ["rpn_class_loss", "rpn_bbox_loss"]
+
+        if do_mask:
+            loss_names.append("img_out_loss")
 
         for name in loss_names:
             layer = self._internal_model.get_layer(name)

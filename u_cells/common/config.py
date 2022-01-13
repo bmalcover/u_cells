@@ -131,6 +131,7 @@ class Config(ABC):
     # Threshold to accept predictions
     PRED_THRESHOLD = 0.8
 
+    DO_MASK = True
     # Flag, if true the masks of the different objects are combined into a solo mask
     COMBINE_FG = False
 
@@ -139,6 +140,16 @@ class Config(ABC):
     RANDOM_MASKS = False
 
     MAKE_BACKGROUND_MASK = False
+
+    # Internal parameter
+    __RPN_NUM_OUTPUTS = 6
+
+    @property
+    def RPN_NUM_OUTPUTS(self):
+        if self.DO_MASK:
+            return self.__RPN_NUM_OUTPUTS
+        else:
+            return self.__RPN_NUM_OUTPUTS - 2 # If the mask is not in the output we removed two
 
     def __init__(self):
         """Set values of computed attributes."""
