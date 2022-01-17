@@ -100,8 +100,10 @@ def main():
 
         regions = list(img_info['regions'].values())
         mask = np.zeros([img.shape[0], img.shape[1], len(regions)], dtype=np.uint8)
+        cells_class = []
 
         for idx_reg, reg in enumerate(regions):
+            cells_class.append(reg['type'])
             reg = reg["shape_attributes"]
             x_points = reg["all_points_x"]
             y_points = reg["all_points_y"]
@@ -146,9 +148,7 @@ def main():
 
             improved_mask.append(aux_mask)
 
-        # improved_mask.append(mask[:, :, idx_chann])
-
-        bboxes_json[generation] = regions_augmented
+        bboxes_json[generation] = {'regions': regions_augmented, 'cell_class': cells_class}
         cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"{generation}.jpg"), img)
 
         improved_mask = np.dstack(improved_mask)
