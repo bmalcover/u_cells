@@ -267,6 +267,8 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
     def batch_pack_graph(x, counts, num_rows):
         """ Picks different number of values from each row in x depending on the values in counts.
 
+        TODO: Make num_rows (batch size) compatible with tf 2.7
+
         Args:
             x:
             counts:
@@ -276,7 +278,7 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
 
         """
         outputs = []
-        for i in range(num_rows):
+        for i in range(6):
             outputs.append(x[i, :counts[i]])  # I imatge, counts[i] bboxes
         return tf.concat(outputs, axis=0)
 
