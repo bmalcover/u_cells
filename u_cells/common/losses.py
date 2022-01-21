@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+""" Module containing all the loss functions.
+
+Writen by: Miquel Miró Nicolau (UIB)
+"""
 from typing import Callable, Union
 
 import numpy as np
@@ -226,9 +231,9 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     y_true = tf.reshape(y_true, (-1,))
     y_pred = tf.reshape(y_pred, (-1,))
 
-    positive_px = tf.compat.v1.where(y_true > 0)
+    positive_px = tf.compat.v1.where(tf.math.greater(y_true, 0))
 
-    negative_px = tf.compat.v1.where(y_true == 0)
+    negative_px = tf.compat.v1.where(tf.equal(y_true, 0))
     negative_px = tf.random.shuffle(negative_px)[:tf.size(positive_px)]
 
     y_true_pos = tf.gather(y_true, positive_px)
@@ -243,7 +248,7 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     # Compute binary cross entropy. If no positive ROIs, then return 0.
     # shape: [batch, roi, num_classes]
 
-    loss = keras.switch(tf.size(input=y_true) > 0,
+    loss = keras.switch(tf.math.greater(tf.size(input=y_true), 0),
                         keras.binary_crossentropy(target=y_true, output=y_pred),
                         tf.constant(0.0))
     loss = keras.mean(loss)

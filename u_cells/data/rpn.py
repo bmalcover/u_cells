@@ -107,7 +107,7 @@ class DataGenerator(KU.Sequence):
     """
 
     def __init__(self, steps: int, dataset, config, shuffle=True, augmentation=None,
-                 detection_targets=False, cache=None):
+                 detection_targets=False, cache=None, phantom_output: bool = False):
 
         self.__steps = steps
         self.image_ids = np.copy(dataset.image_ids)
@@ -129,6 +129,7 @@ class DataGenerator(KU.Sequence):
         self.batch_size = self.config.BATCH_SIZE
         self.detection_targets = detection_targets
         self.__cache = cache
+        self.__phantom_output = phantom_output
 
     def __len__(self):
         return self.__steps
@@ -203,8 +204,11 @@ class DataGenerator(KU.Sequence):
             else:
                 inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
 
-            outputs = [np.zeros((4, 512, 512, 100))] + (
-                    [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
+            if self.__phantom_output:
+                outputs = [np.zeros((4, 512, 512, 100))] + (
+                            [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
+            else:
+                outputs = []
             item = inputs, outputs
 
             if self.__cache is not None:

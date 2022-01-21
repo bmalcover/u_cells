@@ -36,6 +36,7 @@ class RPN(BaseModel):
         self.__mask_output = mask_output
         self.__img_input = img_input
         self.__mode = mode
+        self.__losses_layers = []
 
         super().__init__(input_size)
 
@@ -217,7 +218,11 @@ class RPN(BaseModel):
                        rpn_bbox,
                        rpn_class_loss,
                        rpn_bbox_loss]
+
+            self.__losses_layers = [rpn_class_loss, rpn_bbox_loss]
+
             if do_mask:
+                self.__losses_layers.append(mask_loss)
                 inputs.insert(1, input_gt_masks)
                 outputs = [mask_output, mask_loss] + outputs
 
@@ -241,14 +246,16 @@ class RPN(BaseModel):
             *args: Additional arguments.
             **kwargs: Additional keyword arguments.
         """
+        if self.__mode is NeuralMode.INFERENCE:
+            raise EnvironmentError("The model should not be compiled in INFERENCE mode.")
+
         loss_names = ["rpn_class_loss", "rpn_bbox_loss"]
 
         if do_mask:
             loss_names.append("img_out_loss")
 
-        for name in loss_names:
-            layer = self._internal_model.get_layer(name)
-            loss = (tf.reduce_mean(input_tensor=layer.output, keepdims=True) * 1.0)
+        for layer, name in zip(self.__losses_layers, loss_names):
+            loss = (tf.reduce_mean(input_tensor=layer, keepdims=True) * 1.0)
             self._internal_model.add_loss(loss)
             self._internal_model.add_metric(loss, name=name, aggregation='mean')
 
