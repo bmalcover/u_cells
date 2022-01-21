@@ -6,15 +6,71 @@ on the Mask R-CNN implementation of the original paper.
 
 Writen by: Miquel Miró Nicolau (UIB)
 """
-from typing import Tuple
-
-import numpy as np
 import math
-import imgaug
+import random
+from typing import Tuple
+import warnings
 
+import imgaug
+import numpy as np
 from tensorflow.keras import utils as KU
 
 from ..common import utils
+
+
+class Cache:
+    """ Class used to cache the data of the RPN.
+
+    The class is used to cache the data of the RPN. To used it, you must call the object as a
+    sequence with the operators [].
+    """
+
+    def __init__(self, max_size: int = 10, override: bool = False):
+        self.__cache = {}
+        self.__max_size = max_size
+        self.__override = override
+
+    def __getitem__(self, item):
+        """ Return the value of the cache for the given key.
+
+        Args:
+            item: Key of the cache.
+
+        Raises:
+            KeyError: If the key is not in the cache.
+
+        Returns:
+            The value of the cache for the given key.
+        """
+        if item not in self.__cache:
+            raise KeyError
+
+        return self.__cache[item]
+
+    def __setitem__(self, key, value):
+        """ Add value to the cache.
+
+        The pair key=>value is added to the cache. If the cache is full, a random element is deleted
+        to make space for the new element.
+
+        Args:
+            key:
+            value:
+        """
+        is_fulled = len(self.__cache) == self.__max_size
+        if is_fulled and key not in self.__cache and self.__override:
+            warnings.warn(f"Cache fulled, removed random key")
+            used_keys = list(self.__cache.keys())
+            del self.__cache[random.choice(used_keys)]
+
+        if not is_fulled or (is_fulled and self.__override):
+            self.__cache[key] = value
+
+    def __contains__(self, item):
+        return item in self.__cache
+
+    def __len__(self):
+        return len(self.__cache)
 
 
 class DataGenerator(KU.Sequence):
@@ -51,7 +107,7 @@ class DataGenerator(KU.Sequence):
     """
 
     def __init__(self, steps: int, dataset, config, shuffle=True, augmentation=None,
-                 detection_targets=False):
+                 detection_targets=False, cache=None):
 
         self.__steps = steps
         self.image_ids = np.copy(dataset.image_ids)
@@ -72,81 +128,89 @@ class DataGenerator(KU.Sequence):
         self.augmentation = augmentation
         self.batch_size = self.config.BATCH_SIZE
         self.detection_targets = detection_targets
+        self.__cache = cache
 
     def __len__(self):
         return self.__steps
 
     def __getitem__(self, batch_idx):
-        b = 0
-        inter_batch_idx = -1
-        while b < self.batch_size:
-            # Increment index to pick next image. Shuffle if at the start of an epoch.
-            inter_batch_idx = (inter_batch_idx + 1) % len(self.image_ids)
-            image_index = inter_batch_idx + (self.batch_size * batch_idx)
-
-            if self.shuffle and image_index == 0:
-                np.random.shuffle(self.image_ids)
-
-            # Get GT bounding boxes and masks for image.
-            image_id = self.image_ids[image_index]
-            image, image_meta, gt_class_ids, gt_boxes, gt_masks = DataGenerator.load_image_gt(
-                self.dataset, self.config, image_id, augmentation=self.augmentation)
-
-            # Skip images that have no instances. This can happen in cases
-            # where we train on a subset of classes and the image doesn't
-            # have any of the classes we care about.
-            if not np.any(gt_class_ids > 0):
-                continue
-
-            # RPN Targets
-            rpn_match, rpn_bbox = DataGenerator.build_rpn_targets(image.shape, self.anchors,
-                                                                  gt_class_ids, gt_boxes,
-                                                                  self.config)
-
-            # Init batch arrays
-            if b == 0:
-                batch_rpn_match = np.zeros(
-                    [self.batch_size, self.anchors.shape[0], 1], dtype=rpn_match.dtype)
-                batch_rpn_bbox = np.zeros(
-                    [self.batch_size, self.config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4],
-                    dtype=rpn_bbox.dtype)
-                batch_images = np.zeros(
-                    (self.batch_size,) + image.shape, dtype=np.float32)
-                if self.config.COMBINE_FG:
-                    mask_depth = 1
-                else:
-                    mask_depth = self.config.MAX_GT_INSTANCES
-                batch_gt_masks = np.zeros(
-                    (self.batch_size, gt_masks.shape[0], gt_masks.shape[1], mask_depth),
-                    dtype=gt_masks.dtype)
-                batch_gt_class_ids = np.zeros(
-                    (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32)
-
-                # If more instances than fits in the array, sub-sample from them.
-            if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
-                ids = np.random.choice(
-                    np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
-                gt_masks = gt_masks[:, :, ids]
-
-            # Add to batch
-            batch_rpn_match[b] = rpn_match[:, np.newaxis]
-            batch_rpn_bbox[b] = rpn_bbox
-            batch_images[b] = self.mold_image(image)
-            gt_masks = gt_masks.reshape((gt_masks.shape[0], gt_masks.shape[1], -1))
-            batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
-            batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
-            b += 1
-
-        if self.config.DO_MASK:
-            inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox,
-                      batch_gt_class_ids]
+        if self.__cache is not None and batch_idx in self.__cache:
+            item = self.__cache[batch_idx]
         else:
-            inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
+            b = 0
+            inter_batch_idx = -1
+            while b < self.batch_size:
+                # Increment index to pick next image. Shuffle if at the start of an epoch.
+                inter_batch_idx = (inter_batch_idx + 1) % len(self.image_ids)
+                image_index = inter_batch_idx + (self.batch_size * batch_idx)
 
-        outputs = [np.zeros((4, 512, 512, 100))] + (
-                [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
+                if self.shuffle and image_index == 0:
+                    np.random.shuffle(self.image_ids)
 
-        return inputs, outputs
+                # Get GT bounding boxes and masks for image.
+                image_id = self.image_ids[image_index]
+                image, image_meta, gt_class_ids, gt_boxes, gt_masks = DataGenerator.load_image_gt(
+                    self.dataset, self.config, image_id, augmentation=self.augmentation)
+
+                # Skip images that have no instances. This can happen in cases
+                # where we train on a subset of classes and the image doesn't
+                # have any of the classes we care about.
+                if not np.any(gt_class_ids > 0):
+                    continue
+
+                # RPN Targets
+                rpn_match, rpn_bbox = DataGenerator.build_rpn_targets(image.shape, self.anchors,
+                                                                      gt_class_ids, gt_boxes,
+                                                                      self.config)
+
+                # Init batch arrays
+                if b == 0:
+                    batch_rpn_match = np.zeros(
+                        [self.batch_size, self.anchors.shape[0], 1], dtype=rpn_match.dtype)
+                    batch_rpn_bbox = np.zeros(
+                        [self.batch_size, self.config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4],
+                        dtype=rpn_bbox.dtype)
+                    batch_images = np.zeros(
+                        (self.batch_size,) + image.shape, dtype=np.float32)
+                    if self.config.COMBINE_FG:
+                        mask_depth = 1
+                    else:
+                        mask_depth = self.config.MAX_GT_INSTANCES
+                    batch_gt_masks = np.zeros(
+                        (self.batch_size, gt_masks.shape[0], gt_masks.shape[1], mask_depth),
+                        dtype=gt_masks.dtype)
+                    batch_gt_class_ids = np.zeros(
+                        (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32)
+
+                    # If more instances than fits in the array, sub-sample from them.
+                if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
+                    ids = np.random.choice(
+                        np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
+                    gt_masks = gt_masks[:, :, ids]
+
+                # Add to batch
+                batch_rpn_match[b] = rpn_match[:, np.newaxis]
+                batch_rpn_bbox[b] = rpn_bbox
+                batch_images[b] = self.mold_image(image)
+                gt_masks = gt_masks.reshape((gt_masks.shape[0], gt_masks.shape[1], -1))
+                batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
+                batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
+                b += 1
+
+            if self.config.DO_MASK:
+                inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox,
+                          batch_gt_class_ids]
+            else:
+                inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
+
+            outputs = [np.zeros((4, 512, 512, 100))] + (
+                    [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
+            item = inputs, outputs
+
+            if self.__cache is not None:
+                self.__cache[batch_idx] = item
+
+        return item
 
     @staticmethod
     def __generate_anchors(scales, ratios, shape, feature_stride, anchor_stride):
