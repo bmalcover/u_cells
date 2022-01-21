@@ -257,7 +257,7 @@ class RPN(BaseModel):
                                      loss=[None] * len(self._internal_model.outputs))
 
     def train(self, train_generator, val_generator, epochs: int, check_point_path: Union[str, None],
-              callbacks=None, verbose=1, *args, **kwargs):
+              callbacks=None, verbose=1, validation_steps=None, *args, **kwargs):
         """ Trains the model with the info passed as parameters.
 
         The keras model is trained with the information passed as parameters. The info is defined
@@ -270,6 +270,9 @@ class RPN(BaseModel):
             check_point_path (str): Path to the file where the model will be saved.
             callbacks: List of callbacks to be used during the training.
             verbose (int): Verbosity mode.
+            validation_steps (int | None): Number of steps of the validation data to process. If
+                                            None, the value is obtained from the configuration file.
+
         Returns:
             History of the training.
         """
@@ -278,7 +281,9 @@ class RPN(BaseModel):
                 f"Mode of the Neural network incorrect: instead of train the mode is {self.__mode}")
 
         steps_per_epoch = self.__config.STEPS_PER_EPOCH
-        validation_steps = self.__config.VALIDATION_STEPS
+
+        if validation_steps is None:
+            validation_steps = self.__config.VALIDATION_STEPS
 
         return super().train(train_generator, val_generator, epochs, steps_per_epoch,
                              validation_steps,
