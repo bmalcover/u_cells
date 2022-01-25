@@ -305,3 +305,22 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
     loss = keras.switch(tf.size(input=loss) > 0, keras.mean(loss), tf.constant(0.0))
 
     return loss
+
+
+def dice_coefficient_loss_rpn(target_masks, target_class_ids, pred_masks):
+    """
+
+    Args:
+        target_masks: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses zero
+                                                       padding to fill array.
+        target_class_ids: Convention
+        pred_masks: ([batch, num_rois, height, width]) float32 tensor with values from 0 to 1.
+
+    Returns:
+
+    """
+    loss = keras.switch(tf.math.greater(tf.size(input=target_masks), 0),
+                        own_dice_coefficient_loss(target_masks, pred_masks),
+                        tf.constant(0.0))
+    loss = keras.mean(loss)
+    return loss

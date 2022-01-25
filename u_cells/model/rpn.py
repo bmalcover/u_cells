@@ -12,6 +12,7 @@ import enum
 import tensorflow.keras.models as keras_model
 import tensorflow.keras.layers as keras_layer
 import tensorflow.keras.optimizers as keras_opt
+import tensorflow.keras.backend as keras
 import tensorflow as tf
 
 from ..common import losses as own_losses
@@ -116,18 +117,14 @@ class RPN(BaseModel):
         else:
             return outputs, shared
 
-    def build_rpn(self, input_size, connection_layer=None):
+    def build_rpn(self, connection_layer=None):
         """ Builds the Region Proposal Network.
 
         Args:
-            input_size: Input size of the feature map.
             connection_layer: The layer to connect the RPN to.
         Returns:
 
         """
-        input_gt_masks = keras_layer.Input(
-            shape=[input_size[0], input_size[1], None], name="input_gt_masks")
-
         rpn, rpn_conv = RPN.__build_rpn_model(self.__config.RPN_ANCHOR_STRIDE,
                                               len(self.__config.RPN_ANCHOR_RATIOS),
                                               self.__feature_depth, connection_layer)  # Conv5
@@ -152,23 +149,23 @@ class RPN(BaseModel):
 
         # RPN Output
         rpn_class_logits, rpn_class, rpn_bbox = rpn_output
-        # rpn_conv = rpn.get_layer('rpn_conv_shared')
 
-        return input_gt_masks, (rpn_class_logits, rpn_class, rpn_bbox), rpn_conv
+        return (rpn_class_logits, rpn_class, rpn_bbox), rpn_conv
 
-    def build(self, input_gt_masks=None, rpn=None, mask_output=None, do_mask=True, mask_loss=None,
-              *args, **kwargs):
+    def build(self, mask_shape, rpn=None, mask_output=None, do_mask=True, mask_loss=None,
+              mask_class=None, *args, **kwargs):
         """ Builds the model.
 
         The RPN model building is done by the combination of the output of a backbone model. This
         backbone model had been passed previously in the constructor.
 
         Args:
-            input_gt_masks: Input tensor of ground truth masks.
+            mask_shape: Shape of the input tensor of ground truth masks.
             rpn: Output of the RPN model.
             do_mask: Boolean if true, the model will build the mask branch.
             mask_output: Output of the mask model.
             mask_loss: Loss function of the mask output.
+            mask_class: Classification for mask branch.
             *args: Additional arguments.
             **kwargs: Additional keyword arguments.
 
@@ -178,8 +175,8 @@ class RPN(BaseModel):
         if mask_output is None:
             mask_output = self.__mask_output
 
-        if input_gt_masks is None or rpn is None:
-            input_gt_masks, rpn, _ = self.build_rpn(self.__img_input)
+        if rpn is None:
+            rpn, _ = self.build_rpn(self.__img_input)
 
         rpn_class_logits, rpn_class, rpn_bbox = rpn
 
@@ -191,15 +188,6 @@ class RPN(BaseModel):
                                                dtype=tf.float32)
             input_gt_class_ids = keras_layer.Input(shape=[None], name="input_gt_class_ids",
                                                    dtype=tf.int32)
-
-            if do_mask:
-                if mask_loss is None:
-                    mask_loss = keras_layer.Lambda(lambda x: own_losses.mrcnn_mask_loss_graph(*x),
-                                                   name="img_out_loss")(
-                        [input_gt_masks, input_gt_class_ids, mask_output])
-                else:
-                    mask_loss = keras_layer.Lambda(lambda x: mask_loss(*x), name="img_out_loss")(
-                        [input_gt_masks, input_gt_class_ids, mask_output])
 
             # RPN Loss
             rpn_class_loss = keras_layer.Lambda(lambda x: own_losses.class_loss_graph(*x),
@@ -222,9 +210,30 @@ class RPN(BaseModel):
             self.__losses_layers = [rpn_class_loss, rpn_bbox_loss]
 
             if do_mask:
+                input_gt_masks = keras_layer.Input(shape=mask_shape, name="input_gt_masks")
+
+                if mask_loss is None:
+                    mask_loss = keras_layer.Lambda(lambda x: own_losses.mrcnn_mask_loss_graph(*x),
+                                                   name="img_out_loss")(
+                        [input_gt_masks, input_gt_class_ids, mask_output])
+                else:
+                    mask_loss = keras_layer.Lambda(lambda x: mask_loss(*x), name="img_out_loss")(
+                        [input_gt_masks, input_gt_class_ids, mask_output])
+
                 self.__losses_layers.append(mask_loss)
+
                 inputs.insert(1, input_gt_masks)
                 outputs = [mask_output, mask_loss] + outputs
+
+                if mask_class is not None:
+                    input_gt_class_ids = keras_layer.Lambda(lambda x: tf.cast(x, dtype=tf.float32))(
+                        input_gt_class_ids)
+                    mask_class_loss = keras_layer.Lambda(lambda x: keras.binary_crossentropy(*x),
+                                                         name="mask_class_loss")(
+                        [input_gt_class_ids, mask_class])
+                    outputs += [mask_class_loss, mask_class]
+
+                    self.__losses_layers.append(mask_class_loss)
 
         else:
             # Create masks for detections
@@ -233,9 +242,12 @@ class RPN(BaseModel):
             if do_mask:
                 outputs = [mask_output] + outputs
 
+                if mask_class is not None:
+                    outputs.append(mask_class)
+
         self._internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
 
-    def compile(self, do_mask=True, *args, **kwargs):
+    def compile(self, do_mask: bool = True, do_class_mask: bool = False, *args, **kwargs):
         """ Compiles the model.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
@@ -243,24 +255,33 @@ class RPN(BaseModel):
 
         Args:
             do_mask: Boolean if true, the model will compile the mask branch.
+            do_class_mask: Boolean if true, the model will compile the class mask branch.
             *args: Additional arguments.
             **kwargs: Additional keyword arguments.
         """
         if self.__mode is NeuralMode.INFERENCE:
-            raise EnvironmentError("The model should not be compiled in INFERENCE mode.")
+            raise EnvironmentError(f"The model should not be compiled in {self.__mode} mode.")
 
         loss_names = ["rpn_class_loss", "rpn_bbox_loss"]
+        weights = [0.5, 0.5]
 
         if do_mask:
             loss_names.append("img_out_loss")
+            weights.append(1.0)
 
-        for layer, name in zip(self.__losses_layers, loss_names):
-            loss = (tf.reduce_mean(input_tensor=layer, keepdims=True) * 1.0)
+        if do_class_mask:
+            loss_names.append("mask_class_loss")
+            weights[-1] = 0.5
+            weights.append(0.5)
+
+        for layer, name, w in zip(self.__losses_layers, loss_names, weights):
+            loss = (tf.reduce_mean(input_tensor=layer, keepdims=True) * w)
             self._internal_model.add_loss(loss)
             self._internal_model.add_metric(loss, name=name, aggregation='mean')
 
         self._internal_model.compile(*args, **kwargs,
-                                     optimizer=keras_opt.Adam(lr=self.__config.LEARNING_RATE),
+                                     optimizer=keras_opt.Adam(
+                                         learning_rate=self.__config.LEARNING_RATE),
                                      loss=[None] * len(self._internal_model.outputs))
 
     def train(self, train_generator, val_generator, epochs: int, check_point_path: Union[str, None],
