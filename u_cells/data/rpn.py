@@ -183,6 +183,8 @@ class DataGenerator(KU.Sequence):
                     batch_gt_class_ids = np.zeros(
                         (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32)
 
+                    # batch_gt_mask_class
+
                     # If more instances than fits in the array, sub-sample from them.
                 if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
                     ids = np.random.choice(
