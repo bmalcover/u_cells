@@ -228,8 +228,9 @@ class RPN(BaseModel):
                 if mask_class is not None:
                     input_gt_class_ids = keras_layer.Lambda(lambda x: tf.cast(x, dtype=tf.float32))(
                         input_gt_class_ids)
-                    mask_class_loss = keras_layer.Lambda(lambda x: keras.binary_crossentropy(*x),
-                                                         name="mask_class_loss")(
+                    mask_class_loss = keras_layer.Lambda(
+                        lambda x: keras.mean(keras.binary_crossentropy(*x)),
+                        name="mask_class_loss")(
                         [input_gt_class_ids, mask_class])
                     outputs += [mask_class_loss, mask_class]
 

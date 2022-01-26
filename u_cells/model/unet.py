@@ -2,7 +2,9 @@
 """ Module containing all functions to build the U-Net model.
 
 This module contains the set of functions that defines the original U-Net networks. This network was
-proposed by Ronnenberger et al. and is based on a Encoder-Decoder architecture.
+proposed by Ronnenberger et al. and is based from an Encoder-Decoder architecture.
+
+Written by: Miquel Miró Nicolau (UIB)
 """
 
 from typing import Callable, Union, Tuple
@@ -269,13 +271,28 @@ class EncoderUNet(BaseModel):
 
 
 class DecoderUNet(BaseModel):
+    """ Decoder of the U-Net.
+
+    This class is responsible for the decoder part of the U-Net. It is a wrapper for the keras.model
+    In addition to the vanilla decoder it also includes the posibility to use more advanced
+    architectures with the parameters options:
+
+    Args:
+        input_size: Size of the input image.
+        residual: Whether to use residual connections in the decoder.
+        n_channels: Number of channels of the output image.
+        class_output_size: By default None, if not None the decoder will have an extra branch for
+            the classification of the output channels between if there are object in the channel or
+            only background.
+    """
+
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]],
-                 n_channels: int = 1, residual: bool = False, class_output: bool = False):
+                 n_channels: int = 1, residual: bool = False, class_output_size=None):
         super().__init__(input_size)
 
         self.__residual = residual
         self.__n_channels = n_channels
-        self.__class_output = class_output
+        self.__class_output = class_output_size
 
     def build(self, n_filters, last_activation: Union[Callable, str], encoder: EncoderUNet,
               embedded, extra_layer: dict = None, dilation_rate: int = 1,
@@ -315,14 +332,17 @@ class DecoderUNet(BaseModel):
         out = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
                                  padding='same', dilation_rate=dilation_rate,
                                  kernel_initializer='he_normal', name="img_out")(x)
-        if self.__class_output:
+        if self.__class_output is not None:
             class_out = keras_layer.GlobalAvgPool2D()(x)
-            class_out = keras_layer.Dense(1024, activation='relu', name='mask_class_1')(class_out)
-            class_out = keras_layer.Dense(1024, activation='relu', name='mask_class_2')(class_out)
-            class_out = keras_layer.Dense(self.__n_channels, activation='sigmoid',
+            class_out = keras_layer.Dense(self.__class_output, activation='relu',
+                                          name='mask_class_1')(class_out)
+            class_out = keras_layer.Dropout(0.5)(class_out)
+            class_out = keras_layer.Dense(self.__class_output, activation='relu',
+                                          name='mask_class_2')(class_out)
+            class_out = keras_layer.Dense([None, self.__n_channels], activation='sigmoid',
                                           name='mask_class_logits_1')(class_out)
 
-            out = keras_layer.Multiply()([out, class_out])
+            out = keras_layer.Multiply(name="multiply_end")([out, class_out])
 
             return out, class_out
         else:
