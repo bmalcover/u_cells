@@ -6,7 +6,6 @@ proposed by Ronnenberger et al. and is based from an Encoder-Decoder architectur
 
 Written by: Miquel Miró Nicolau (UIB)
 """
-
 from typing import Callable, Union, Tuple
 
 import tensorflow.keras.models as keras_model
@@ -107,7 +106,6 @@ class UpConvBlock(keras_layer.Layer):
     """ Block to build the decoder.
 
     The decoder is build with the combination of UpSampling2D and Conv2D.
-
     """
 
     def __init__(self, layer_idx: int, filter_size: Tuple[int, int], filters: int,
@@ -241,9 +239,6 @@ class EncoderUNet(BaseModel):
         self.__residual = residual
         self._layers = None
 
-    def compile(self, *args, **kwargs):
-        raise NotImplementedError
-
     def build(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
               layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
               pool_size: Tuple[int, int] = (2, 2)):
@@ -284,15 +279,18 @@ class DecoderUNet(BaseModel):
         class_output_size: By default None, if not None the decoder will have an extra branch for
             the classification of the output channels between if there are object in the channel or
             only background.
+        merge_branch: Boolean, if true adds an extra output to the decoder that merges the masks.
     """
 
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]],
-                 n_channels: int = 1, residual: bool = False, class_output_size=None):
+                 n_channels: int = 1, residual: bool = False, class_output_size=None,
+                 merge_branch: bool = False):
         super().__init__(input_size)
 
         self.__residual = residual
         self.__n_channels = n_channels
         self.__class_output = class_output_size
+        self.__merge_branch = merge_branch
 
     def build(self, n_filters, last_activation: Union[Callable, str], encoder: EncoderUNet,
               embedded, extra_layer: dict = None, dilation_rate: int = 1,
@@ -329,9 +327,9 @@ class DecoderUNet(BaseModel):
 
             self._layers[layer_idx] = x
 
-        out = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
-                                 padding='same', dilation_rate=dilation_rate,
-                                 kernel_initializer='he_normal', name="img_out")(x)
+        out_mask = keras_layer.Conv2D(self.__n_channels, (1, 1), activation=last_activation,
+                                      padding='same', dilation_rate=dilation_rate,
+                                      kernel_initializer='he_normal', name="img_out")(x)
         if self.__class_output is not None:
             class_out = keras_layer.GlobalAvgPool2D()(x)
             class_out = keras_layer.Dense(self.__class_output, activation='relu',
@@ -339,14 +337,18 @@ class DecoderUNet(BaseModel):
             class_out = keras_layer.Dropout(0.5)(class_out)
             class_out = keras_layer.Dense(self.__class_output, activation='relu',
                                           name='mask_class_2')(class_out)
-            class_out = keras_layer.Dense([None, self.__n_channels], activation='sigmoid',
+            class_out = keras_layer.Dense(self.__n_channels, activation='sigmoid',
                                           name='mask_class_logits_1')(class_out)
 
-            out = keras_layer.Multiply(name="multiply_end")([out, class_out])
+            out_mask = keras_layer.Multiply(name="multiply_end")([out_mask, class_out])
 
-            return out, class_out
+            output = [out_mask, class_out]
         else:
-            return out
+            output = [out_mask]
 
-    def compile(self, *args, **kwargs):
-        raise NotImplementedError
+        if self.__merge_branch:
+            merge_branch = keras_layer.Lambda(lambda t: tf.reduce_sum(t, axis=-1),
+                                              name="merge_branch")(out_mask)
+            output.append(merge_branch)
+
+        return tuple(output)
