@@ -257,6 +257,9 @@ class RPN(BaseModel):
                 if mask_class is not None:
                     outputs.append(mask_class)
 
+                    if merge_branch is not None:
+                        outputs.append(merge_branch)
+
         self._internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
 
     def compile(self, do_mask: bool = True, do_class_mask: bool = False,
