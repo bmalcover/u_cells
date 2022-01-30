@@ -133,6 +133,7 @@ class Config(ABC):
 
     DO_MASK = True
     DO_MASK_CLASS = False
+    DO_MERGE_BRANCH = False
     # Flag, if true the masks of the different objects are combined into a solo mask
     COMBINE_FG = False
 
@@ -153,6 +154,9 @@ class Config(ABC):
             num_outputs += 2  # If the mask is not in the output we removed two
 
         if self.DO_MASK_CLASS:
+            num_outputs += 2
+
+        if self.DO_MERGE_BRANCH:
             num_outputs += 2
 
         return num_outputs

@@ -153,7 +153,7 @@ class RPN(BaseModel):
         return (rpn_class_logits, rpn_class, rpn_bbox), rpn_conv
 
     def build(self, mask_shape, rpn=None, mask_output=None, do_mask=True, mask_loss=None,
-              mask_class=None, *args, **kwargs):
+              mask_class=None, merge_branch: bool = False, *args, **kwargs):
         """ Builds the model.
 
         The RPN model building is done by the combination of the output of a backbone model. This
@@ -166,6 +166,7 @@ class RPN(BaseModel):
             mask_output: Output of the mask model.
             mask_loss: Loss function of the mask output.
             mask_class: Classification for mask branch.
+            merge_branch: Extra branch outputting the summation of the layers.
             *args: Additional arguments.
             **kwargs: Additional keyword arguments.
 
@@ -236,6 +237,16 @@ class RPN(BaseModel):
 
                     self.__losses_layers.append(mask_class_loss)
 
+                if merge_branch is not None:
+                    merge_input = keras_layer.Lambda(
+                        lambda t: tf.reduce_sum(t, axis=-1), name='in_mask_merge')([input_gt_masks])
+
+                    merge_branch_loss = keras_layer.Lambda(
+                        lambda t: keras.mean(keras.binary_crossentropy(*t)),
+                        name="merge_branch_loss")([merge_input, merge_branch])
+                    outputs += [merge_branch_loss, merge_branch]
+
+                    self.__losses_layers.append(merge_branch_loss)
         else:
             # Create masks for detections
             inputs = [self.__img_input]
@@ -246,9 +257,13 @@ class RPN(BaseModel):
                 if mask_class is not None:
                     outputs.append(mask_class)
 
+                    if merge_branch is not None:
+                        outputs.append(merge_branch)
+
         self._internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
 
-    def compile(self, do_mask: bool = True, do_class_mask: bool = False, *args, **kwargs):
+    def compile(self, do_mask: bool = True, do_class_mask: bool = False,
+                do_merge_branch: bool = False, *args, **kwargs):
         """ Compiles the model.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
@@ -257,6 +272,7 @@ class RPN(BaseModel):
         Args:
             do_mask: Boolean if true, the model will compile the mask branch.
             do_class_mask: Boolean if true, the model will compile the class mask branch.
+            do_merge_branch: Boolean if true, the model will compile the merge branch.
             *args: Additional arguments.
             **kwargs: Additional keyword arguments.
         """
@@ -268,12 +284,18 @@ class RPN(BaseModel):
 
         if do_mask:
             loss_names.append("img_out_loss")
-            weights.append(1.0)
 
-        if do_class_mask:
-            loss_names.append("mask_class_loss")
-            weights[-1] = 0.5
-            weights.append(0.5)
+            if do_class_mask:
+                loss_names.append("mask_class_loss")
+
+                if do_merge_branch:
+                    loss_names.append("merge_branch_loss")
+
+                    weights += [0.3, 0.3, 0.3]
+                else:
+                    weights += [0.5, 0.5]
+            else:
+                weights.append(1.0)
 
         for layer, name, w in zip(self.__losses_layers, loss_names, weights):
             loss = (tf.reduce_mean(input_tensor=layer, keepdims=True) * w)
