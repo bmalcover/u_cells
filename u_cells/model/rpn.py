@@ -263,7 +263,7 @@ class RPN(BaseModel):
         self._internal_model = keras_model.Model(inputs=inputs, outputs=outputs, name='rpn')
 
     def compile(self, do_mask: bool = True, do_class_mask: bool = False,
-                do_merge_branch: bool = False, *args, **kwargs):
+                do_merge_branch: bool = False, weights=None, *args, **kwargs):
         """ Compiles the model.
 
         This function has two behaviors depending on the inclusion of the RPN. In the case of
@@ -273,6 +273,7 @@ class RPN(BaseModel):
             do_mask: Boolean if true, the model will compile the mask branch.
             do_class_mask: Boolean if true, the model will compile the class mask branch.
             do_merge_branch: Boolean if true, the model will compile the merge branch.
+            weights: Default None, the weights of the different branches.
             *args: Additional arguments.
             **kwargs: Additional keyword arguments.
         """
@@ -280,22 +281,22 @@ class RPN(BaseModel):
             raise EnvironmentError(f"The model should not be compiled in {self.__mode} mode.")
 
         loss_names = ["rpn_class_loss", "rpn_bbox_loss"]
-        weights = [0.5, 0.5]
 
         if do_mask:
             loss_names.append("img_out_loss")
 
-            if do_class_mask:
-                loss_names.append("mask_class_loss")
+        if do_class_mask:
+            loss_names.append("mask_class_loss")
 
-                if do_merge_branch:
-                    loss_names.append("merge_branch_loss")
+        if do_merge_branch:
+            loss_names.append("merge_branch_loss")
 
-                    weights += [0.3, 0.3, 0.3]
-                else:
-                    weights += [0.5, 0.5]
-            else:
-                weights.append(1.0)
+        weights = weights if weights is not None else []
+
+        if len(loss_names) > len(weights):
+            weights += [1.0] * int(len(loss_names) - len(weights))
+        elif len(weights) > len(loss_names):
+            weights = weights[:len(loss_names)]
 
         for layer, name, w in zip(self.__losses_layers, loss_names, weights):
             loss = (tf.reduce_mean(input_tensor=layer, keepdims=True) * w)
