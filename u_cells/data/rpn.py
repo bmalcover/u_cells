@@ -437,6 +437,7 @@ class DataGenerator(KU.Sequence):
         original_shape = image.shape
 
         window = [0, 0, image.shape[1], image.shape[0]]
+        scale = 1
         if not config.DYNAMIC_SIZE:
             image, window, scale, padding, crop = utils.resize_image(image,
                                                                      min_dim=config.IMAGE_MIN_DIM,

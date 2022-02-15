@@ -214,7 +214,7 @@ class RPN(BaseModel):
                 input_gt_masks = keras_layer.Input(shape=mask_shape, name="input_gt_masks")
 
                 if mask_loss is None:
-                    mask_loss = keras_layer.Lambda(lambda x: own_losses.mrcnn_mask_loss_graph(*x),
+                    mask_loss = keras_layer.Lambda(lambda x: own_losses.rpn_mask_loss_dice(*x),
                                                    name="img_out_loss")(
                         [input_gt_masks, input_gt_class_ids, mask_output])
                 else:
