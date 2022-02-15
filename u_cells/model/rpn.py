@@ -153,7 +153,7 @@ class RPN(BaseModel):
         return (rpn_class_logits, rpn_class, rpn_bbox), rpn_conv
 
     def build(self, mask_shape, rpn=None, mask_output=None, do_mask=True, mask_loss=None,
-              mask_class=None, merge_branch: bool = False, *args, **kwargs):
+              mask_class=None, merge_branch=None, *args, **kwargs):
         """ Builds the model.
 
         The RPN model building is done by the combination of the output of a backbone model. This

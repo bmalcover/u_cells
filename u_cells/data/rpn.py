@@ -208,7 +208,7 @@ class DataGenerator(KU.Sequence):
 
             if self.__phantom_output:
                 outputs = [np.zeros((4, 512, 512, 100))] + (
-                            [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
+                        [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
             else:
                 outputs = []
             item = inputs, outputs
@@ -435,12 +435,15 @@ class DataGenerator(KU.Sequence):
         image = dataset.load_image(image_id)
         mask, class_ids = dataset.load_mask(image_id)
         original_shape = image.shape
-        image, window, scale, padding, crop = utils.resize_image(image,
-                                                                 min_dim=config.IMAGE_MIN_DIM,
-                                                                 min_scale=config.IMAGE_MIN_SCALE,
-                                                                 max_dim=config.IMAGE_MAX_DIM,
-                                                                 mode=config.IMAGE_RESIZE_MODE)
-        mask = utils.resize_mask(mask, scale, padding, crop)
+
+        window = [0, 0, image.shape[1], image.shape[0]]
+        if not config.DYNAMIC_SIZE:
+            image, window, scale, padding, crop = utils.resize_image(image,
+                                                                     min_dim=config.IMAGE_MIN_DIM,
+                                                                     min_scale=config.IMAGE_MIN_SCALE,
+                                                                     max_dim=config.IMAGE_MAX_DIM,
+                                                                     mode=config.IMAGE_RESIZE_MODE)
+            mask = utils.resize_mask(mask, scale, padding, crop)
 
         # Augmentation
         # This requires the imgaug lib (https://github.com/aleju/imgaug)

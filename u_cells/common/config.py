@@ -143,6 +143,8 @@ class Config(ABC):
 
     MAKE_BACKGROUND_MASK = False
 
+    DYNAMIC_SIZE = False  # If true the size of the image is changed for each sample
+
     # Internal parameter
     __RPN_NUM_OUTPUTS = 4
 
