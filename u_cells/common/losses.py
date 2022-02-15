@@ -8,6 +8,7 @@ from typing import Callable, Union
 import numpy as np
 
 import tensorflow.keras.backend as keras
+import tensorflow_addons as tfa
 import tensorflow as tf
 
 
@@ -323,4 +324,24 @@ def dice_coefficient_loss_rpn(target_masks, target_class_ids, pred_masks):
                         own_dice_coefficient_loss(target_masks, pred_masks),
                         tf.constant(0.0))
     loss = keras.mean(loss)
+    return loss
+
+
+fl = tfa.losses.SigmoidFocalCrossEntropy(gamma=2)
+
+
+def own_focal_loss(target_masks, pred_masks):
+    """ Combines the sigmoid focal loss and the dice coefficient loss
+
+    Args:
+        target_masks: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1.
+        pred_masks: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1.
+
+    Returns:
+
+    """
+    loss = 10.0 * fl(target_masks, pred_masks) - tf.math.log(
+        onw_dice_coefficient(target_masks, pred_masks))
+    loss = keras.mean(loss)
+
     return loss
