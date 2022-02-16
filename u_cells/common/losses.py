@@ -12,7 +12,7 @@ import tensorflow_addons as tfa
 import tensorflow as tf
 
 
-def onw_dice_coefficient(y_true, y_pred, smooth=1):
+def own_dice_coefficient(y_true, y_pred, smooth=1):
     """ Computes the Sørensen–Dice coefficient for the batch of images.
 
     Dice = (2*|X & Y|)/ (|X|+ |Y|)
@@ -32,7 +32,7 @@ def onw_dice_coefficient(y_true, y_pred, smooth=1):
 
 
 def own_dice_coefficient_loss(y_true, y_pred):
-    return 1 - onw_dice_coefficient(y_true, y_pred)
+    return 1 - own_dice_coefficient(y_true, y_pred)
 
 
 def multiclass_weighted_dice_loss(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[
@@ -256,6 +256,23 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     return loss
 
 
+def rpn_mask_loss_dice(target_masks, target_class_ids, pred_masks):
+    """ Mask branch loss.
+
+    Args:
+        target_masks:
+        target_class_ids:
+        pred_masks:
+
+    Returns:
+
+    """
+    loss = own_dice_coefficient_loss(target_masks, pred_masks)
+    loss = keras.mean(loss)
+
+    return loss
+
+
 def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
     """
 
@@ -341,7 +358,7 @@ def own_focal_loss(target_masks, pred_masks):
 
     """
     loss = 10.0 * fl(target_masks, pred_masks) - tf.math.log(
-        onw_dice_coefficient(target_masks, pred_masks))
+        own_dice_coefficient(target_masks, pred_masks))
     loss = keras.mean(loss)
 
     return loss
