@@ -12,10 +12,11 @@ import numpy as np
 
 import common_main_funcs as cmf
 
-DATA_FOLDER = os.path.join(".", "in", "train")
-OUTPUT_FOLDER = os.path.join(".", "out", "hda")
-WINDOWS_SIZE = (1024, 1024)
+DATA_FOLDER = os.path.join(".", "out", "normalized")
+OUTPUT_FOLDER = os.path.join(".", "out", "hda_s")
+WINDOWS_SIZE = (128, 128)
 DENSITY_THRESH = 0.05
+NORMALIZED_DATA = False
 
 
 def get_sliding_window(img, mask, size):
@@ -46,12 +47,16 @@ def region_inside_window(region, window):
 def main():
     """ Main function.
     """
-    images_info_path = os.path.join(DATA_FOLDER, "via_region_data.json")
+    images_info_path = os.path.join(DATA_FOLDER, "bboxes.json")
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     bboxes_json = {}
-    for img_idx, img, regions, mask, cell_type in cmf.get_raw_img_and_info(DATA_FOLDER,
-                                                                           images_info_path):
+
+    generator = cmf.get_raw_img_and_info
+    if NORMALIZED_DATA:
+        generator = cmf.get_normalized_data
+
+    for img_idx, regions, cell_type, img, mask in generator(images_info_path):
         print(f"Start to thread the img {img_idx} ...")
         for window_idx, (x, y, img_w, mask_w) in enumerate(
                 get_sliding_window(img, mask, WINDOWS_SIZE)):
@@ -69,7 +74,8 @@ def main():
                 are_inside, _ = zip(*reg_info)
                 are_inside = np.array(are_inside)
 
-                img_w, mask_w, regions_norm = cmf.normalize_img_mask(img_w, mask_w)
+                img_w, mask_w, regions_norm = cmf.normalize_img_mask(img_w, mask_w, WINDOWS_SIZE[0],
+                                                                     WINDOWS_SIZE[1])
 
                 cell_type_aux = list(np.array(cell_type, dtype=int)[are_inside])
                 cell_type_aux = [int(ct) for ct in cell_type_aux]
