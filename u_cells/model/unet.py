@@ -6,6 +6,7 @@ proposed by Ronnenberger et al. and is based from an Encoder-Decoder architectur
 
 Written by: Miquel Miró Nicolau (UIB)
 """
+from abc import ABC
 from typing import Callable, Union, Tuple
 
 import tensorflow.keras.models as keras_model
@@ -14,135 +15,7 @@ from tensorflow.keras.optimizers import *
 import tensorflow as tf
 
 from ..model.base_model import BaseModel
-from .. import layers as own_layer
-
-
-class ConvBlock(keras_layer.Layer):
-    """ Convolutional block used on the encoder
-
-    """
-
-    def __init__(self, layer_idx: int, filters: int, kernel_size: Tuple[int, int], activation: str,
-                 kernel_initializer: str = 'he_normal', padding: str = "same",
-                 coord_conv=None, residual: bool = False, batch_normalization: bool = False,
-                 **kwargs):
-        super(ConvBlock, self).__init__(**kwargs)
-
-        self.__layer_idx: int = layer_idx
-        self.__filters: int = filters
-        self.__kernel_size = kernel_size
-        self.__activation: str = activation
-        self.__kernel_initializer: str = kernel_initializer
-        self.__padding: str = padding
-        self.__is_batch_normalized: bool = batch_normalization
-        self.__residual = residual
-        self.__coord_conv = coord_conv
-
-        self.conv2d_1 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
-                                           kernel_initializer=kernel_initializer, padding=padding,
-                                           activation=activation)
-
-        if batch_normalization:
-            self.batch_normalization_1 = keras_layer.BatchNormalization()
-
-        if coord_conv is not None:
-            self.conv2d_2 = own_layer.CoordConv(x_dim=coord_conv[0], y_dim=coord_conv[1],
-                                                filters=filters, kernel_size=kernel_size,
-                                                kernel_initializer=kernel_initializer,
-                                                padding=padding,
-                                                activation=activation)
-        else:
-            self.conv2d_2 = keras_layer.Conv2D(filters=filters, kernel_size=kernel_size,
-                                               kernel_initializer=kernel_initializer,
-                                               padding=padding,
-                                               activation=activation)
-        self.batch_normalization_2 = keras_layer.BatchNormalization()
-
-        self.shortcut = keras_layer.Conv2D(filters, (1, 1), padding=padding)
-        self.shortcut_bn = keras_layer.BatchNormalization()
-
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            'layer_idx': self.__layer_idx,
-            'filters': self.__filters,
-            'kernel_size': self.__kernel_size,
-            'activation': self.__activation,
-            'kernel_initializer': self.__kernel_initializer,
-            'padding': self.__padding,
-            'batch_normalization': self.__is_batch_normalized,
-            'residual': self.__residual,
-            'coord_conv': self.__coord_conv
-        })
-        return config
-
-    def call(self, inputs, training=None, **kwargs):
-        x = inputs
-        x = self.conv2d_1(x)
-
-        if self.__is_batch_normalized:
-            x = self.batch_normalization_1(x)
-
-        x = self.conv2d_2(x)
-
-        if self.__is_batch_normalized:
-            x = self.batch_normalization_2(x)
-
-        if self.__residual:
-            shortcut = self.shortcut(inputs)
-
-            if self.__is_batch_normalized:
-                shortcut = self.shortcut_bn(shortcut)
-            x = keras_layer.Add()([x, shortcut])
-
-        return x
-
-    @property
-    def layer_idx(self):
-        return self.__layer_idx
-
-
-class UpConvBlock(keras_layer.Layer):
-    """ Block to build the decoder.
-
-    The decoder is build with the combination of UpSampling2D and Conv2D.
-    """
-
-    def __init__(self, layer_idx: int, filter_size: Tuple[int, int], filters: int,
-                 activation: str = 'relu', padding: str = "same",
-                 kernel_initializer: str = "he_normal", **kwargs):
-        super(UpConvBlock, self).__init__(**kwargs)
-
-        self.__layer_idx = layer_idx
-        self.__filter_size = filter_size
-        self.__filters = filters
-        self.__activation = activation
-        self.__padding: str = padding
-        self.__kernel_initializer: str = kernel_initializer
-
-        self.up_sampling_1 = keras_layer.UpSampling2D(size=filter_size)
-        self.conv2d_1 = keras_layer.Conv2D(filters, kernel_size=filter_size,
-                                           activation=activation, padding=padding,
-                                           kernel_initializer=kernel_initializer)
-
-    def call(self, inputs, **kwargs):
-        x = inputs
-        x = self.up_sampling_1(x)
-        x = self.conv2d_1(x)
-
-        return x
-
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            'layer_idx': self.__layer_idx,
-            'filter_size': self.__filter_size,
-            'filters': self.__filters,
-            'activation': self.__activation,
-            'padding': self.__padding,
-            'kernel_initializer': self.__kernel_initializer
-        })
-        return config
+from .. import layers as mm_layers
 
 
 class CropConcatBlock(keras_layer.Layer):
@@ -231,7 +104,7 @@ class UNet(BaseModel):
                                      loss=loss_functions, metrics=['categorical_accuracy'])
 
 
-class EncoderUNet(BaseModel):
+class EncoderUNet(BaseModel, ABC):
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]],
                  residual: bool = False):
         super().__init__(input_size)
@@ -257,7 +130,7 @@ class EncoderUNet(BaseModel):
         for layer_idx in range(0, layer_depth):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
-            x = ConvBlock(layer_idx, name=f"e_conv_block_{layer_idx}", **conv_params)(x)
+            x = mm_layers.ConvBlock(layer_idx, name=f"e_conv_block_{layer_idx}", **conv_params)(x)
             self._layers[layer_idx] = x
 
             x = keras_layer.MaxPooling2D(pool_size, name=f"e_max_pool_{layer_idx}")(x)
@@ -265,7 +138,7 @@ class EncoderUNet(BaseModel):
         return input_image, x
 
 
-class DecoderUNet(BaseModel):
+class DecoderUNet(BaseModel, ABC):
     """ Decoder of the U-Net.
 
     This class is responsible for the decoder part of the U-Net. It is a wrapper for the keras.model
@@ -306,8 +179,9 @@ class DecoderUNet(BaseModel):
         for layer_idx in range(len(encoder) - 1, -1, -1):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
-            x = UpConvBlock(layer_idx, filter_size=(2, 2), filters=n_filters * (2 ** layer_idx),
-                            activation='relu', name=f"d_up_conv_block{layer_idx}")(x)
+            x = mm_layers.UpConvBlock(layer_idx, filter_size=(2, 2),
+                                      filters=n_filters * (2 ** layer_idx),
+                                      activation='relu', name=f"d_up_conv_block{layer_idx}")(x)
 
             encoder_layer = encoder[layer_idx]
             if extra_layer is not None and layer_idx in extra_layer:
@@ -322,8 +196,9 @@ class DecoderUNet(BaseModel):
             if coord_conv is not None and layer_idx in coord_conv:
                 coord_conv_size = coord_conv[layer_idx]
 
-            x = ConvBlock(layer_idx, coord_conv=coord_conv_size, name=f"d_conv_block_{layer_idx}",
-                          **conv_params)(x)
+            x = mm_layers.ConvBlock(layer_idx, coord_conv=coord_conv_size,
+                                    name=f"d_conv_block_{layer_idx}",
+                                    **conv_params)(x)
 
             self._layers[layer_idx] = x
 
