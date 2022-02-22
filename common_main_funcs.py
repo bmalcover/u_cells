@@ -25,7 +25,17 @@ def get_contour_precedence(contour, cols):
     return ((origin[0] // tolerance_factor) * tolerance_factor) * cols + origin[1]
 
 
-def get_raw_img_and_info(path: str, info_path: str):
+def get_raw_img_and_info(info_path: str):
+    """ Returns the raw image and the information of the image.
+
+    Args:
+        info_path: String with the path to the information file.
+
+    Yields:
+        Image id, image, regions_list, mask, cell type.
+    """
+    path, _ = os.path.split(info_path)
+
     images_info = json.load(open(info_path))
     images_info = list(images_info.values())  # We do not need the keys
 
@@ -33,10 +43,10 @@ def get_raw_img_and_info(path: str, info_path: str):
         filename = img_info['filename']
 
         img_path = os.path.join(path, filename)
-        img = cv2.imread(img_path)
+        image = cv2.imread(img_path)
 
         regions = list(img_info['regions'].values())
-        mask = np.zeros([img.shape[0], img.shape[1], len(regions)], dtype=np.uint8)
+        mask = np.zeros([image.shape[0], image.shape[1], len(regions)], dtype=np.uint8)
         cell_type = []
 
         regions_list = []
@@ -50,29 +60,59 @@ def get_raw_img_and_info(path: str, info_path: str):
             rr, cc = skimage.draw.polygon(y_points, x_points)
             mask[rr, cc, idx_reg] = 1
 
-        yield img_idx, img, regions_list, mask, cell_type
+        yield img_idx, image, regions_list, mask, cell_type
 
 
-def normalize_img_mask(img, mask):
+def get_normalized_data(path: str, extension: str = "jpg"):
+    """ Yields the image and mask data from a normalized dataset.
+
+    Args:
+        path:
+        extension:
+
+    Yields:
+        Image id, image, regions_list, mask, cell type.
+    """
+    dataset_dir, _ = os.path.split(path)
+    image_data = json.load(open(path))
+
+    for img_idx, info in image_data.items():
+        regions_list = info['regions_list']
+        regions_list = [np.array(r) for r in regions_list]
+
+        cells_class = info['cell_class']
+
+        image_path = os.path.join(dataset_dir, f"{img_idx}.{extension}")
+        mask_path = os.path.join(dataset_dir, f"{img_idx}.npy")
+
+        image = skimage.io.imread(image_path)
+        mask = np.load(mask_path)
+
+        yield img_idx, image, regions_list, mask, cells_class
+
+
+def normalize_img_mask(img, mask, min_dim: int = 512, max_dim: int = 512):
     """ Normalize and resize the image and mask.
 
 
     Args:
         img: Numpy array of the image to be normalized.
         mask: Numpy array of the mask to be normalized.
+        min_dim: Integer with the minimum dimension of the image.
+        max_dim: Integer with the maximum dimension of the image.
 
     Returns:
         img: Normalized image.
         mask: Normalized mask.
     """
 
-    img, window, scale, padding, crop = utils.resize_image(img, min_dim=400, min_scale=0,
-                                                           max_dim=512, mode='square')
+    img, window, scale, padding, crop = utils.resize_image(img, min_dim=min_dim, min_scale=0,
+                                                           max_dim=max_dim, mode='square')
     mask = utils.resize_mask(mask, scale, padding, crop)
     regions_augmented = []
     improved_mask = []
-    for idx_chann in range(mask.shape[-1]):
-        contours, _ = cv2.findContours(mask[:, :, idx_chann], cv2.RETR_LIST,
+    for idx_channel in range(mask.shape[-1]):
+        contours, _ = cv2.findContours(mask[:, :, idx_channel], cv2.RETR_LIST,
                                        cv2.CHAIN_APPROX_SIMPLE)
         if len(contours) > 0:
             contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
