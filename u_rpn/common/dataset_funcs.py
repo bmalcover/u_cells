@@ -16,7 +16,7 @@ import skimage.color
 import skimage.transform
 import skimage.draw
 
-from u_cells.common import utils
+from u_rpn.common import utils
 
 
 def get_contour_precedence(contour, cols):

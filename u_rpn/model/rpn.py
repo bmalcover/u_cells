@@ -15,7 +15,7 @@ import tensorflow.keras.optimizers as keras_opt
 import tensorflow.keras.backend as keras
 import tensorflow as tf
 
-from ..common import losses as own_losses
+from ..losses import losses as own_losses
 from ..model.base_model import BaseModel
 
 

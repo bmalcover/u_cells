@@ -10,10 +10,10 @@ import os
 import cv2
 import numpy as np
 
-import common_main_funcs as cmf
+from u_rpn.common import dataset_funcs as dtf
 
-DATA_FOLDER = os.path.join(".", "out", "normalized")
-OUTPUT_FOLDER = os.path.join(".", "out", "hda_s")
+DATA_FOLDER = os.path.join("../..", "out", "normalized")
+OUTPUT_FOLDER = os.path.join("../..", "out", "hda_s")
 WINDOWS_SIZE = (128, 128)
 DENSITY_THRESH = 0.05
 NORMALIZED_DATA = False
@@ -52,9 +52,9 @@ def main():
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     bboxes_json = {}
 
-    generator = cmf.get_raw_img_and_info
+    generator = dtf.get_raw_img_and_info
     if NORMALIZED_DATA:
-        generator = cmf.get_normalized_data
+        generator = dtf.get_normalized_data
 
     for img_idx, regions, cell_type, img, mask in generator(images_info_path):
         print(f"Start to thread the img {img_idx} ...")
@@ -74,7 +74,7 @@ def main():
                 are_inside, _ = zip(*reg_info)
                 are_inside = np.array(are_inside)
 
-                img_w, mask_w, regions_norm = cmf.normalize_img_mask(img_w, mask_w, WINDOWS_SIZE[0],
+                img_w, mask_w, regions_norm = dtf.normalize_img_mask(img_w, mask_w, WINDOWS_SIZE[0],
                                                                      WINDOWS_SIZE[1])
 
                 cell_type_aux = list(np.array(cell_type, dtype=int)[are_inside])
