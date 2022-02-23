@@ -15,7 +15,7 @@ import tensorflow.keras.optimizers as keras_opt
 import tensorflow.keras.backend as keras
 import tensorflow as tf
 
-from ..losses import losses as own_losses
+from ..losses import segmentation, bboxes
 from ..model.base_model import BaseModel
 
 
@@ -191,10 +191,10 @@ class RPN(BaseModel):
                                                    dtype=tf.int32)
 
             # RPN Loss
-            rpn_class_loss = keras_layer.Lambda(lambda x: own_losses.class_loss_graph(*x),
+            rpn_class_loss = keras_layer.Lambda(lambda x: bboxes.class_loss_graph(*x),
                                                 name="rpn_class_loss")(
                 [input_rpn_match, rpn_class_logits])
-            rpn_bbox_loss = keras_layer.Lambda(lambda x: own_losses.bbox_loss_graph(*x),
+            rpn_bbox_loss = keras_layer.Lambda(lambda x: bboxes.bbox_loss_graph(*x),
                                                name="rpn_bbox_loss")(
                 [input_rpn_bbox, input_rpn_match, rpn_bbox, self.__config.BATCH_SIZE])
 
@@ -214,7 +214,7 @@ class RPN(BaseModel):
                 input_gt_masks = keras_layer.Input(shape=mask_shape, name="input_gt_masks")
 
                 if mask_loss is None:
-                    mask_loss = keras_layer.Lambda(lambda x: own_losses.rpn_mask_loss_dice(*x),
+                    mask_loss = keras_layer.Lambda(lambda x: segmentation.dice_rpn(*x),
                                                    name="img_out_loss")(
                         [input_gt_masks, input_gt_class_ids, mask_output])
                 else:
