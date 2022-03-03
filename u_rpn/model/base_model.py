@@ -87,7 +87,7 @@ class BaseModel(ABC):
 
         if check_point_path is not None:
             callbacks.append(tf.keras.callbacks.ModelCheckpoint(check_point_path, verbose=0,
-                                                                save_weights_only=False,
+                                                                save_weights_only=True,
                                                                 save_best_only=True))
 
         if val_generator is not None:
