@@ -18,17 +18,18 @@ from tensorflow.keras.losses import categorical_crossentropy
 GROUND_DISTANCE_FILE = os.path.dirname(__file__) / Path('../ground_distance.npy')
 
 
-def earth_mover_distance(
-        **kwargs
-) -> Callable:
+def earth_mover_distance(**kwargs) -> Callable:
     """
     Wrapper for earth_mover distance for unified interface with self-guided earth mover distance loss.
     """
+
     def _earth_mover_distance(
             y_true: K.placeholder,
             y_pred: K.placeholder
     ) -> K.placeholder:
-        return tf.reduce_mean(tf.square(tf.cumsum(y_true, axis=-1) - tf.cumsum(y_pred, axis=-1)), axis=-1)
+        return K.mean(
+            tf.reduce_mean(tf.square(tf.cumsum(y_true, axis=-1) - tf.cumsum(y_pred, axis=-1)),
+                           axis=-1))
 
     return _earth_mover_distance
 
@@ -59,7 +60,9 @@ def approximate_earth_mover_distance(
 
 
 class EmdWeightHeadStart(Callback):
-    """Class for implementing delayed inclusion of the distance-based regularization term for the self-guided emd."""
+    """ Class for implementing delayed inclusion of the distance-based regularization term for the
+    self-guided emd.
+    """
 
     def __init__(self):
         super(EmdWeightHeadStart, self).__init__()
@@ -68,7 +71,7 @@ class EmdWeightHeadStart(Callback):
         self.cross_entropy_loss_history = []
         self.self_guided_emd_loss_history = []
 
-    def on_epoch_begin(self, epoch, logs={}):
+    def on_epoch_begin(self, epoch, logs=None):
         self.epoch = epoch
         if epoch == 4:
             cross_entropy_loss = tf.reduce_mean(
@@ -185,7 +188,8 @@ def self_guided_earth_mover_distance(
                     ground_distance_manager=model.ground_distance_manager
                 )
                 model.emd_weight_head_start.cross_entropy_loss_history.append(cross_entropy_loss)
-                model.emd_weight_head_start.self_guided_emd_loss_history.append(self_guided_emd_loss)
+                model.emd_weight_head_start.self_guided_emd_loss_history.append(
+                    self_guided_emd_loss)
             return cross_entropy_loss
         else:
             self_guided_emd_loss = _calculate_self_guided_loss(
@@ -217,6 +221,3 @@ def _calculate_self_guided_loss(
         )
     cost_vectors = tf.stack(cost_vectors)
     return K.sum(K.square(y_pred) * cost_vectors, axis=1)
-
-
-
