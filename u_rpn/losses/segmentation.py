@@ -9,19 +9,15 @@ is the channel.
 Losses:
     dice_expanded: Dice loss without an aggregation operation. The results will be a bi-dimensional
         tensor with the same width and height than the input containing the error for each "voxel".
-    dice_multi_class_weighted: Wrapper for the dice loss with an aggregation operation and a weight
-        for each class.
     dice_aggregated: Dice loss with an aggregation operation. The results will be a single value for
         each channel.
     dice_rpn: Dice loss adapted to the U-RPN architecture.
+    bce_weighted_rpn: Weighted BCE loss adapted to the U-RPN architecture.
     mrcnn_mask_loss_graph: Loss for the mask prediction of the Mask R-CNN model. Based on the
         binary cross entropy loss and applied only to the positives channels.
 
 Writen by: Miquel Miró Nicolau (UIB)
 """
-from typing import Union, Callable
-
-import numpy as np
 import tensorflow.keras.backend as keras
 import tensorflow as tf
 
@@ -45,47 +41,6 @@ def dice_expanded(y_true, y_pred, smooth=1):
             keras.sum(keras.square(y_true), -1) + keras.sum(keras.square(y_pred), -1) + smooth)
 
     return 1 - dice
-
-
-def dice_multiclass_weighted(class_weights: Union[list, np.ndarray, tf.Tensor]) -> Callable[
-    [tf.Tensor, tf.Tensor], tf.Tensor]:
-    """ Weighted Dice loss.
-
-    Used as loss function for multi-class image segmentation with one-hot encoded masks.
-
-    Args:
-        class_weights: Class weight coefficients (Union[list, np.ndarray, tf.Tensor],
-                        len=<N_CLASSES>)
-    Returns:
-        Weighted Dice loss function (Callable[[tf.Tensor, tf.Tensor], tf.Tensor])
-    """
-    if not isinstance(class_weights, tf.Tensor):
-        class_weights = tf.constant(class_weights)
-
-    def loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-        """ Compute weighted Dice loss.
-
-        Args:
-            y_true: True masks (tf.Tensor, shape=(<BATCH_SIZE>, <IMAGE_HEIGHT>, <IMAGE_WIDTH>,
-                                                  <N_CLASSES>))
-            y_pred: Predicted masks (tf.Tensor, shape=(<BATCH_SIZE>, <IMAGE_HEIGHT>, <IMAGE_WIDTH>,
-                                                       <N_CLASSES>))
-
-        Returns:
-            Weighted Dice loss (tf.Tensor, shape=(None,))
-        """
-        axis_to_reduce = range(1, keras.ndim(y_pred))  # Reduce all axis but first (batch)
-        numerator = y_true * y_pred * class_weights  # Broadcasting
-        numerator = 2. * keras.sum(numerator, axis=axis_to_reduce)
-
-        denominator = (y_true + y_pred) * class_weights  # Broadcasting
-        denominator = keras.sum(denominator, axis=axis_to_reduce)
-
-        iou = 1 - numerator / denominator
-
-        return iou
-
-    return loss
 
 
 def dice_aggregated_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5,
@@ -137,8 +92,8 @@ def dice_rpn(target_masks, target_class_ids, pred_masks):
     """
 
     Args:
-        target_masks: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses zero
-                                                       padding to fill array.
+        target_masks: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses
+                                    zero padding to fill array.
         target_class_ids: Convention
         pred_masks: ([batch, num_rois, height, width]) float32 tensor with values from 0 to 1.
 
@@ -150,6 +105,51 @@ def dice_rpn(target_masks, target_class_ids, pred_masks):
                         tf.constant(0.0))
     loss = keras.mean(loss)
     return loss
+
+
+def bce_weighted_rpn(target_masks, target_class_ids, pred_masks):
+    """ Weighted binary cross entropy loss for the RPN.
+
+    To fix unbalanced classes, we split the loss function into positive and negative classes, and
+    we weight the loss of the positive class with the number of positive examples in the batch and
+    the same with the negative class.
+
+    Args:
+        target_masks: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses
+                            zero padding to fill array.
+        target_class_ids: Convention
+        pred_masks: ([batch, num_rois, height, width]) float32 tensor with values from 0 to 1.
+
+    Returns:
+
+    """
+    pred_masks = tf.reshape(pred_masks, [-1])
+    target_masks = tf.reshape(target_masks, [-1])
+
+    pos_px = tf.compat.v1.where(tf.math.greater(target_masks, 0))
+    neg_px = tf.compat.v1.where(tf.math.less_equal(target_masks, 0))
+
+    pos_pred = tf.gather(pred_masks, pos_px)
+    pos_target = tf.gather(target_masks, pos_px)
+
+    neg_pred = tf.gather(pred_masks, neg_px)
+    neg_target = tf.gather(target_masks, neg_px)
+
+    pos_loss = keras.binary_crossentropy(pos_target, pos_pred)
+    neg_loss = keras.binary_crossentropy(neg_target, neg_pred)
+
+    neg_loss = keras.mean(neg_loss)
+    pos_loss = keras.mean(pos_loss)
+
+    neg_loss = keras.switch(tf.math.is_nan(neg_loss),
+                            tf.constant(0.0),
+                            neg_loss)
+
+    pos_loss = keras.switch(tf.math.is_nan(pos_loss),
+                            tf.constant(0.0),
+                            pos_loss)
+
+    return (tf.cast(neg_loss, tf.float32) * 0.5) + (tf.cast(pos_loss, tf.float32) * 0.5)
 
 
 def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
