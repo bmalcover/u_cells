@@ -216,10 +216,10 @@ class RPN(BaseModel):
                 if mask_loss is None:
                     mask_loss = keras_layer.Lambda(lambda x: segmentation.dice_rpn(*x),
                                                    name="img_out_loss")(
-                        [input_gt_masks, input_gt_class_ids, mask_output])
+                        [input_gt_masks, mask_output])
                 else:
                     mask_loss = keras_layer.Lambda(lambda x: mask_loss(*x), name="img_out_loss")(
-                        [input_gt_masks, input_gt_class_ids, mask_output])
+                        [input_gt_masks, mask_output])
 
                 self.__losses_layers.append(mask_loss)
 
