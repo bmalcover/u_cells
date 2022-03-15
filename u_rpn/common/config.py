@@ -131,10 +131,37 @@ class Config(ABC):
     # Threshold to accept predictions
     PRED_THRESHOLD = 0.8
 
+    DO_MASK = True
+    DO_MASK_CLASS = False
+    DO_MERGE_BRANCH = False
     # Flag, if true the masks of the different objects are combined into a solo mask
     COMBINE_FG = False
 
     RAW_PREDICTION = True
+
+    RANDOM_MASKS = False
+
+    MAKE_BACKGROUND_MASK = False
+
+    DYNAMIC_SIZE = False  # If true the size of the image is changed for each sample
+
+    # Internal parameter
+    __RPN_NUM_OUTPUTS = 4
+
+    @property
+    def RPN_NUM_OUTPUTS(self):
+        num_outputs = self.__RPN_NUM_OUTPUTS
+
+        if self.DO_MASK:
+            num_outputs += 2  # If the mask is not in the output we removed two
+
+        if self.DO_MASK_CLASS:
+            num_outputs += 2
+
+        if self.DO_MERGE_BRANCH:
+            num_outputs += 2
+
+        return num_outputs
 
     def __init__(self):
         """Set values of computed attributes."""

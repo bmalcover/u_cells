@@ -1,209 +1,113 @@
-from abc import ABC, abstractmethod
+# -*- coding: utf-8 -*-
+""" Module containing all the RPN data classes.
+
+The RPN data classes are used to store the data of bounding boxes and its related masks, its based
+on the Mask R-CNN implementation of the original paper.
+
+Writen by: Miquel Miró Nicolau (UIB)
+"""
+import math
+import random
 from typing import Tuple
 import warnings
 
-import numpy as np
-import math
-import skimage
 import imgaug
-
+import numpy as np
 from tensorflow.keras import utils as KU
 
-from u_cells.common import utils
+from ..common import utils
 
 
-class Dataset(ABC):
-    """The base class for dataset classes.
-    To use it, create a new class that adds functions specific to the dataset
-    you want to use. For example:
+class Cache:
+    """ Class used to cache the data of the RPN.
 
-    class CatsAndDogsDataset(Dataset):
-        def load_cats_and_dogs(self):
-            ...
-        def load_mask(self, image_id):
-            ...
-        def image_reference(self, image_id):
-            ...
-
-    See COCODataset and ShapesDataset as examples.
+    The class is used to cache the data of the RPN. To used it, you must call the object as a
+    sequence with the operators [].
     """
 
-    def __init__(self, class_map=None):
-        self._image_ids = []
-        self.image_info = []
-        # Background is always the first class
-        self.class_info = [{"source": "", "id": 0, "name": "BG"}]
-        self.source_class_ids = {}
+    def __init__(self, max_size: int = 10, override: bool = False):
+        self.__cache = {}
+        self.__max_size = max_size
+        self.__override = override
 
-    def add_class(self, source, class_id, class_name):
-        assert "." not in source, "Source name cannot contain a dot"
-        # Does the class exist already?
-        for info in self.class_info:
-            if info['source'] == source and info["id"] == class_id:
-                # source.class_id combination already available, skip
-                return
-        # Add the class
-        self.class_info.append({
-            "source": source,
-            "id": class_id,
-            "name": class_name,
-        })
+    def __getitem__(self, item):
+        """ Return the value of the cache for the given key.
 
-    def add_image(self, source, image_id, path, **kwargs):
-        image_info = {
-            "id": image_id,
-            "source": source,
-            "path": path,
-        }
-        image_info.update(kwargs)
-        self.image_info.append(image_info)
+        Args:
+            item: Key of the cache.
 
-    @abstractmethod
-    def image_reference(self, image_id):
-        """Return a link to the image in its source Website or details about
-        the image that help looking it up or debugging it.
-
-        Override for your dataset, but pass to this function if you encounter images not in your dataset.
-        """
-        return ""
-
-    def prepare(self, class_map=None):
-        """Prepares the Dataset class for use.
-
-        TODO: class map is not supported yet. When done, it should handle mapping
-              classes from different datasets to the same class ID.
-        """
-
-        def clean_name(name):
-            """Returns a shorter version of object names for cleaner display."""
-            return ",".join(name.split(",")[:1])
-
-        # Build (or rebuild) everything else from the info dicts.
-        self.num_classes = len(self.class_info)
-        self.class_ids = np.arange(self.num_classes)
-        self.class_names = [clean_name(c["name"]) for c in self.class_info]
-        self.num_images = len(self.image_info)
-        self._image_ids = np.arange(self.num_images)
-
-        # Mapping from source class and image IDs to internal IDs
-        self.class_from_source_map = {"{}.{}".format(info['source'], info['id']): id
-                                      for info, id in zip(self.class_info, self.class_ids)}
-        self.image_from_source_map = {"{}.{}".format(info['source'], info['id']): id
-                                      for info, id in zip(self.image_info, self.image_ids)}
-
-        # Map sources to class_ids they support
-        self.sources = list(set([i['source'] for i in self.class_info]))
-        self.source_class_ids = {}
-        # Loop over datasets
-        for source in self.sources:
-            self.source_class_ids[source] = []
-            # Find classes that belong to this dataset
-            for i, info in enumerate(self.class_info):
-                # Include BG class in all datasets
-                if i == 0 or source == info['source']:
-                    self.source_class_ids[source].append(i)
-
-    def map_source_class_id(self, source_class_id):
-        """Takes a source class ID and returns the int class ID assigned to it.
-
-        For example:
-        dataset.map_source_class_id("coco.12") -> 23
-        """
-        return self.class_from_source_map[source_class_id]
-
-    def get_source_class_id(self, class_id, source):
-        """Map an internal class ID to the corresponding class ID in the source dataset."""
-        info = self.class_info[class_id]
-        assert info['source'] == source
-        return info['id']
-
-    @property
-    def image_ids(self):
-        return self._image_ids
-
-    def source_image_link(self, image_id):
-        """Returns the path or URL to the image.
-        Override this to return a URL to the image if it's available online for easy
-        debugging.
-        """
-        return self.image_info[image_id]["path"]
-
-    def load_image(self, image_id):
-        """Load the specified image and return a [H,W,3] Numpy array.
-        """
-        # Load image
-        image = skimage.io.imread(self.image_info[image_id]['path'])
-        # If grayscale. Convert to RGB for consistency.
-        if image.ndim != 3:
-            image = skimage.color.gray2rgb(image)
-        # If has an alpha channel, remove it for consistency
-        if image.shape[-1] == 4:
-            image = image[..., :3]
-        return image
-
-    def load_mask(self, image_id):
-        """Load instance masks for the given image.
-
-        Different datasets use different ways to store masks. Override this
-        method to load instance masks and return them in the form of am
-        array of binary masks of shape [height, width, instances].
+        Raises:
+            KeyError: If the key is not in the cache.
 
         Returns:
-            masks: A bool array of shape [height, width, instance count] with a binary mask per
-                   instance.
-            class_ids: a 1D array of class IDs of the instance masks.
+            The value of the cache for the given key.
         """
-        # Override this function to load a mask from your dataset.
-        # Otherwise, it returns an empty mask.
-        warnings.warn(
-            "You are using the default load_mask(), maybe you need to define your own one.",
-            RuntimeWarning)
+        if item not in self.__cache:
+            raise KeyError
 
-        mask = np.empty([0, 0, 0])
-        class_ids = np.empty([0], np.int32)
+        return self.__cache[item]
 
-        return mask, class_ids
+    def __setitem__(self, key, value):
+        """ Add value to the cache.
+
+        The pair key=>value is added to the cache. If the cache is full, a random element is deleted
+        to make space for the new element.
+
+        Args:
+            key:
+            value:
+        """
+        is_fulled = len(self.__cache) == self.__max_size
+        if is_fulled and key not in self.__cache and self.__override:
+            warnings.warn(f"Cache fulled, removed random key")
+            used_keys = list(self.__cache.keys())
+            del self.__cache[random.choice(used_keys)]
+
+        if not is_fulled or (is_fulled and self.__override):
+            self.__cache[key] = value
+
+    def __contains__(self, item):
+        return item in self.__cache
+
+    def __len__(self):
+        return len(self.__cache)
 
 
 class DataGenerator(KU.Sequence):
-    """An iterable that returns images and corresponding target class ids,
-        bounding box deltas, and masks. It inherits from keras.utils.Sequence to avoid data redundancy
-        when multiprocessing=True.
+    """ An iterable that returns images and corresponding target class ids,
+    bounding box deltas, and masks. It inherits from keras.utils.Sequence to avoid data redundancy
+    when multiprocessing=True.
 
+    Args:
         dataset: The Dataset object to pick data from
         config: The model config object
         shuffle: If True, shuffles the samples before every epoch
-        augmentation: Optional. An imgaug (https://github.com/aleju/imgaug) augmentation.
-            For example, passing imgaug.augmenters.Fliplr(0.5) flips images
-            right/left 50% of the time.
-        random_rois: If > 0 then generate proposals to be used to train the
-                     network classifier and mask heads. Useful if training
-                     the Mask RCNN part without the RPN.
-        detection_targets: If True, generate detection targets (class IDs, bbox
-            deltas, and masks). Typically for debugging or visualizations because
-            in trainig detection targets are generated by DetectionTargetLayer.
+        augmentation: Optional. An imgaug (https://github.com/aleju/imgaug) augmentation. For
+            example, passing imgaug.augmenters.Fliplr(0.5) flips images right/left 50% of the time.
+        detection_targets: If True, generate detection targets (class IDs, bbox deltas, and masks).
+            Typically for debugging or visualizations because in trainig detection targets are
+            generated by DetectionTargetLayer.
 
-        Returns a Python iterable. Upon calling __getitem__() on it, the
-        iterable returns two lists, inputs and outputs. The contents
-        of the lists differ depending on the received arguments:
-        inputs list:
-        - images: [batch, H, W, C]
-        - image_meta: [batch, (meta data)] Image details. See compose_image_meta()
-        - rpn_match: [batch, N] Integer (1=positive anchor, -1=negative, 0=neutral)
-        - rpn_bbox: [batch, N, (dy, dx, log(dh), log(dw))] Anchor bbox deltas.
-        - gt_class_ids: [batch, MAX_GT_INSTANCES] Integer class IDs
-        - gt_boxes: [batch, MAX_GT_INSTANCES, (y1, x1, y2, x2)]
-        - gt_masks: [batch, height, width, MAX_GT_INSTANCES]. The height and width
-                    are those of the image unless use_mini_mask is True, in which
-                    case they are defined in MINI_MASK_SHAPE.
+    Returns:
+        Python iterable. Upon calling __getitem__() on it, the iterable returns two lists, inputs
+        and outputs. The contents of the lists differ depending on the received arguments:
+            inputs list:
+            - images: [batch, H, W, C]
+            - image_meta: [batch, (meta data)] Image details. See compose_image_meta()
+            - rpn_match: [batch, N] Integer (1=positive anchor, -1=negative, 0=neutral)
+            - rpn_bbox: [batch, N, (dy, dx, log(dh), log(dw))] Anchor bbox deltas.
+            - gt_class_ids: [batch, MAX_GT_INSTANCES] Integer class IDs
+            - gt_boxes: [batch, MAX_GT_INSTANCES, (y1, x1, y2, x2)]
+            - gt_masks: [batch, height, width, MAX_GT_INSTANCES]. The height and width
+                        are those of the image unless use_mini_mask is True, in which
+                        case they are defined in MINI_MASK_SHAPE.
 
-        outputs list: Usually empty in regular training. But if detection_targets
-            is True then the outputs list contains target class_ids, bbox deltas,
-            and masks.
-        """
+            outputs list: Usually empty in regular training. But if detection_targets is True then
+                the outputs list contains target class_ids, bbox deltas, and masks.
+    """
 
     def __init__(self, steps: int, dataset, config, shuffle=True, augmentation=None,
-                 detection_targets=False):
+                 detection_targets=False, cache=None, phantom_output: bool = False):
 
         self.__steps = steps
         self.image_ids = np.copy(dataset.image_ids)
@@ -224,74 +128,95 @@ class DataGenerator(KU.Sequence):
         self.augmentation = augmentation
         self.batch_size = self.config.BATCH_SIZE
         self.detection_targets = detection_targets
+        self.__cache = cache
+        self.__phantom_output = phantom_output
 
     def __len__(self):
         return self.__steps
 
-    def __getitem__(self, idx):
-        b = 0
-        image_index = -1
-        while b < self.batch_size:
-            # Increment index to pick next image. Shuffle if at the start of an epoch.
-            image_index = (image_index + 1) % len(self.image_ids)
+    def __getitem__(self, batch_idx):
+        if self.__cache is not None and batch_idx in self.__cache:
+            item = self.__cache[batch_idx]
+        else:
+            b = 0
+            inter_batch_idx = -1
+            while b < self.batch_size:
+                # Increment index to pick next image. Shuffle if at the start of an epoch.
+                inter_batch_idx = (inter_batch_idx + 1) % len(self.image_ids)
+                image_index = inter_batch_idx + (self.batch_size * batch_idx)
 
-            if self.shuffle and image_index == 0:
-                np.random.shuffle(self.image_ids)
+                if self.shuffle and image_index == 0:
+                    np.random.shuffle(self.image_ids)
 
-            # Get GT bounding boxes and masks for image.
-            image_id = self.image_ids[image_index]
-            image, image_meta, gt_class_ids, gt_boxes, gt_masks = DataGenerator.load_image_gt(
-                self.dataset, self.config, image_id, augmentation=self.augmentation)
+                # Get GT bounding boxes and masks for image.
+                image_id = self.image_ids[image_index]
+                image, image_meta, gt_class_ids, gt_boxes, gt_masks = DataGenerator.load_image_gt(
+                    self.dataset, self.config, image_id, augmentation=self.augmentation)
 
-            # Skip images that have no instances. This can happen in cases
-            # where we train on a subset of classes and the image doesn't
-            # have any of the classes we care about.
-            if not np.any(gt_class_ids > 0):
-                continue
+                # Skip images that have no instances. This can happen in cases
+                # where we train on a subset of classes and the image doesn't
+                # have any of the classes we care about.
+                if not np.any(gt_class_ids > 0):
+                    continue
 
-            # RPN Targets
-            rpn_match, rpn_bbox = DataGenerator.build_rpn_targets(image.shape, self.anchors,
-                                                                  gt_class_ids, gt_boxes,
-                                                                  self.config)
+                # RPN Targets
+                rpn_match, rpn_bbox = DataGenerator.build_rpn_targets(image.shape, self.anchors,
+                                                                      gt_class_ids, gt_boxes,
+                                                                      self.config)
 
-            # Init batch arrays
-            if b == 0:
-                batch_rpn_match = np.zeros(
-                    [self.batch_size, self.anchors.shape[0], 1], dtype=rpn_match.dtype)
-                batch_rpn_bbox = np.zeros(
-                    [self.batch_size, self.config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4],
-                    dtype=rpn_bbox.dtype)
-                batch_images = np.zeros(
-                    (self.batch_size,) + image.shape, dtype=np.float32)
-                if self.config.COMBINE_FG:
-                    mask_depth = 1
-                else:
-                    mask_depth = self.config.MAX_GT_INSTANCES
-                batch_gt_masks = np.zeros(
-                    (self.batch_size, gt_masks.shape[0], gt_masks.shape[1], mask_depth),
-                    dtype=gt_masks.dtype)
-                batch_gt_class_ids = np.zeros(
-                    (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32)
+                # Init batch arrays
+                if b == 0:
+                    batch_rpn_match = np.zeros(
+                        [self.batch_size, self.anchors.shape[0], 1], dtype=rpn_match.dtype)
+                    batch_rpn_bbox = np.zeros(
+                        [self.batch_size, self.config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4],
+                        dtype=rpn_bbox.dtype)
+                    batch_images = np.zeros(
+                        (self.batch_size,) + image.shape, dtype=np.float32)
+                    if self.config.COMBINE_FG:
+                        mask_depth = 1
+                    else:
+                        mask_depth = self.config.MAX_GT_INSTANCES
+                    batch_gt_masks = np.zeros(
+                        (self.batch_size, gt_masks.shape[0], gt_masks.shape[1], mask_depth),
+                        dtype=gt_masks.dtype)
+                    batch_gt_class_ids = np.zeros(
+                        (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32)
 
-                # If more instances than fits in the array, sub-sample from them.
-            if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
-                ids = np.random.choice(
-                    np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
-                gt_masks = gt_masks[:, :, ids]
+                    # batch_gt_mask_class
 
-            # Add to batch
-            batch_rpn_match[b] = rpn_match[:, np.newaxis]
-            batch_rpn_bbox[b] = rpn_bbox
-            batch_images[b] = self.mold_image(image.astype(np.float32))
-            gt_masks = gt_masks.reshape((gt_masks.shape[0], gt_masks.shape[1], -1))
-            batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
-            batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
-            b += 1
+                    # If more instances than fits in the array, sub-sample from them.
+                if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
+                    ids = np.random.choice(
+                        np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
+                    gt_masks = gt_masks[:, :, ids]
 
-        inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
-        outputs = [np.zeros((4, 512, 512, 100))] + ([np.zeros((10, 10))] * 5)
+                # Add to batch
+                batch_rpn_match[b] = rpn_match[:, np.newaxis]
+                batch_rpn_bbox[b] = rpn_bbox
+                batch_images[b] = self.mold_image(image)
+                gt_masks = gt_masks.reshape((gt_masks.shape[0], gt_masks.shape[1], -1))
+                batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
+                batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
+                b += 1
 
-        return inputs, outputs
+            if self.config.DO_MASK:
+                inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox,
+                          batch_gt_class_ids]
+            else:
+                inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
+
+            if self.__phantom_output:
+                outputs = [np.zeros((4, 512, 512, 100))] + (
+                        [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
+            else:
+                outputs = []
+            item = inputs, outputs
+
+            if self.__cache is not None:
+                self.__cache[batch_idx] = item
+
+        return item
 
     @staticmethod
     def __generate_anchors(scales, ratios, shape, feature_stride, anchor_stride):
@@ -338,8 +263,10 @@ class DataGenerator(KU.Sequence):
 
     @staticmethod
     def __generate_pyramid_anchors(scales, ratios, feature_shapes, feature_strides, anchor_stride):
-        """Generate anchors at different levels of a feature pyramid. Each scale is associated with
-        a level of the pyramid, but each ratio is used in  all levels of the pyramid.
+        """ Generate anchors at different levels of a feature pyramid.
+
+        Each scale is associated with a level of the pyramid, but each ratio is used in all levels
+        of the pyramid.
 
         Returns:
             anchors: [N, (y1, x1, y2, x2)]. All generated anchors in one array. Sorted with the same
@@ -359,8 +286,8 @@ class DataGenerator(KU.Sequence):
         """ Computes the width and height of each stage of the backbone network.
 
         Args:
-            image_shape:
-            strides:
+            image_shape: [height, width, depth].
+            strides: Strides for each feature map.
 
         Returns:
             [N, (height, width)]. Where N is the number of stages
@@ -371,17 +298,21 @@ class DataGenerator(KU.Sequence):
 
     @staticmethod
     def build_rpn_targets(image_shape, anchors, gt_class_ids, gt_boxes, config):
-        """Given the anchors and GT boxes, compute overlaps and identify positive
-        anchors and deltas to refine them to match their corresponding GT boxes.
+        """ Builds the targets for the Region Proposal Network.
 
-        anchors: [num_anchors, (y1, x1, y2, x2)]
-        gt_class_ids: [num_gt_boxes] Integer class IDs.
-        gt_boxes: [num_gt_boxes, (y1, x1, y2, x2)]
+        Given the anchors and GT boxes, compute overlaps and identify positive anchors and deltas to
+        refine them to match their corresponding GT boxes.
+
+        Args:
+            image_shape: [height, width, depth]
+            anchors: [num_anchors, (y1, x1, y2, x2)]
+            gt_class_ids: [num_gt_boxes] Integer class IDs.
+            gt_boxes: [num_gt_boxes, (y1, x1, y2, x2)]
 
         Returns:
-        rpn_match: [N] (int32) matches between anchors and GT boxes.
-                   1 = positive anchor, -1 = negative anchor, 0 = neutral
-        rpn_bbox: [N, (dy, dx, log(dh), log(dw))] Anchor bbox deltas.
+            rpn_match: [N] (int32) matches between anchors and GT boxes.
+                       1 = positive anchor, -1 = negative anchor, 0 = neutral
+            rpn_bbox: [N, (dy, dx, log(dh), log(dw))] Anchor bbox deltas.
         """
         # RPN Match: 1 = positive anchor, -1 = negative anchor, 0 = neutral
         rpn_match = np.zeros([anchors.shape[0]], dtype=np.int32)
@@ -485,6 +416,9 @@ class DataGenerator(KU.Sequence):
         """Load and return ground truth data for an image (image, mask, bounding boxes).
 
         Args:
+            dataset:
+            config:
+            image_id:
             augmentation: Optional. An imgaug (https://github.com/aleju/imgaug) augmentation.
                           For example, passing imgaug.augmenters.Fliplr(0.5) flips images right/left
                           50% of the time.
@@ -501,12 +435,16 @@ class DataGenerator(KU.Sequence):
         image = dataset.load_image(image_id)
         mask, class_ids = dataset.load_mask(image_id)
         original_shape = image.shape
-        image, window, scale, padding, crop = utils.resize_image(image,
-                                                                 min_dim=config.IMAGE_MIN_DIM,
-                                                                 min_scale=config.IMAGE_MIN_SCALE,
-                                                                 max_dim=config.IMAGE_MAX_DIM,
-                                                                 mode=config.IMAGE_RESIZE_MODE)
-        mask = utils.resize_mask(mask, scale, padding, crop)
+
+        window = [0, 0, image.shape[1], image.shape[0]]
+        scale = 1
+        if not config.DYNAMIC_SIZE:
+            image, window, scale, padding, crop = utils.resize_image(image,
+                                                                     min_dim=config.IMAGE_MIN_DIM,
+                                                                     min_scale=config.IMAGE_MIN_SCALE,
+                                                                     max_dim=config.IMAGE_MAX_DIM,
+                                                                     mode=config.IMAGE_RESIZE_MODE)
+            mask = utils.resize_mask(mask, scale, padding, crop)
 
         # Augmentation
         # This requires the imgaug lib (https://github.com/aleju/imgaug)
@@ -529,13 +467,13 @@ class DataGenerator(KU.Sequence):
             det = augmentation.to_deterministic()
             image = det.augment_image(image)
             # Change mask to np.uint8 because imgaug doesn't support np.bool
-            mask = det.augment_image(mask.astype(np.uint8),
+            mask = det.augment_image(mask,
                                      hooks=imgaug.HooksImages(activator=hook))
             # Verify that shapes didn't change
             assert image.shape == image_shape, "Augmentation shouldn't change image size"
             assert mask.shape == mask_shape, "Augmentation shouldn't change mask size"
             # Change mask back to bool
-            mask = mask.astype(np.bool)
+            mask = mask
 
         # Note that some boxes might be all zeros if the corresponding mask got cropped out.
         # and here is to filter them out
@@ -545,6 +483,13 @@ class DataGenerator(KU.Sequence):
         # Bounding boxes. Note that some boxes might be all zeros
         # if the corresponding mask got cropped out.
         # bbox: [num_instances, (y1, x1, y2, x2)]
+
+        if config.RANDOM_MASKS:
+            order_mask = np.arange(mask.shape[-1])
+            np.random.shuffle(order_mask)
+
+            mask = mask[:, :, order_mask]
+
         bbox = utils.extract_bboxes(mask)
 
         # Active classes
@@ -558,18 +503,30 @@ class DataGenerator(KU.Sequence):
         image_meta = compose_image_meta(image_id, original_shape, image.shape,
                                         window, scale, active_class_ids)
 
-        if config.COMBINE_FG:
-            mask = np.sum(mask, axis=-1)
-            mask[mask > 1] = 1
+        if config.COMBINE_FG or config.MAKE_BACKGROUND_MASK:
+            foreground_mask = np.sum(mask, axis=-1)
+            foreground_mask[foreground_mask > 1] = 1
+
+            if config.COMBINE_FG:
+                mask = foreground_mask
+
+            if config.MAKE_BACKGROUND_MASK:
+                mask = np.concatenate([1 - foreground_mask, mask], axis=-1)
 
         return image, image_meta, class_ids, bbox, mask
 
     def mold_image(self, images):
-        """Expects an RGB image (or array of images) and subtracts
-        the mean pixel and converts it to float. Expects image
-        colors in RGB order.
+        """ Mold inputs to format expected by the neural network.
+
+        Normalization is done based on the mean and std of the image dataset. This mean and std are
+        both stored in the config object and precalculated.
+
+        Args:
+            images: List of image matrices [height, width, channels]. Expects an RGB (in that
+                    specific order (or array of images) and subtracts the mean pixel and converts
+                    it to float.
         """
-        return images.astype(np.float32) - self.config.MEAN_PIXEL
+        return images.astype(np.float64) - self.config.MEAN_PIXEL
 
     def decode_deltas(self, deltas: np.ndarray):
         """ Decodes deltas prediction to the bounding boxes.
@@ -623,17 +580,21 @@ class DataGenerator(KU.Sequence):
 def compose_image_meta(image_id: int, original_image_shape: Tuple[int, int, int],
                        image_shape: Tuple[int, int, int], window: Tuple[int, int, int, int], scale,
                        active_class_ids):
-    """Takes attributes of an image and puts them in one 1D array.
+    """ Takes attributes of an image and puts them in one 1D array.
 
-    image_id: An int ID of the image. Useful for debugging.
-    original_image_shape: [H, W, C] before resizing or padding.
-    image_shape: [H, W, C] after resizing and padding
-    window: (y1, x1, y2, x2) in pixels. The area of the image where the real
+    Args:
+        image_id: An int ID of the image. Useful for debugging.
+        original_image_shape: [H, W, C] before resizing or padding.
+        image_shape: [H, W, C] after resizing and padding
+        window: (y1, x1, y2, x2) in pixels. The area of the image where the real
             image is (excluding the padding)
-    scale: The scaling factor applied to the original image (float32)
-    active_class_ids: List of class_ids available in the dataset from which
+        scale: The scaling factor applied to the original image (float32)
+        active_class_ids: List of class_ids available in the dataset from which
         the image came. Useful if training on images from multiple datasets
         where not all classes are present in all datasets.
+
+    Returns:
+
     """
     meta = np.array(
         [image_id] +  # size=1

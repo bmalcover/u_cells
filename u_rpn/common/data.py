@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+""" Module containing a set of utility functions for the data curation """
+
 from enum import Enum
 import random
 import json
@@ -157,7 +160,26 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
             json.dump(region_out, outfile)
 
 
-def non_max_suppression_fast(boxes, overlap_thresh):
+def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort=False,
+                             ret_sort_val: bool = False):
+    """ Non Maximum Suppression implementation.
+
+    Non Maximum Suppression (NMS) is a technique used in numerous computer vision tasks. It is a
+    class of algorithms to select one entity (e.g., bounding boxes) out of many overlapping
+    entities. We can choose the selection criteria to arrive at the desired results. The criteria
+    are most commonly some form of probability number and some form of overlap measure (e.g.
+    Intersection over Union).
+
+    Args:
+        boxes:
+        overlap_thresh:
+        sort_val:
+        reverse_sort:
+        ret_sort_val:
+
+    Returns:
+
+    """
     # if there are no boxes, return an empty list
     if len(boxes) == 0:
         return []
@@ -175,8 +197,17 @@ def non_max_suppression_fast(boxes, overlap_thresh):
     # compute the area of the bounding boxes and sort the bounding
     # boxes by the bottom-right y-coordinate of the bounding box
     area = (x2 - x1 + 1) * (y2 - y1 + 1)
-    idxs = np.argsort(y2)
-    # keep looping while some indexes still remain in the indexes
+
+    if sort_val is None:
+        idxs = np.argsort(y2)
+    else:
+        assert len(sort_val) == len(y2), "Sort value size should be equal to the number of bboxes"
+        idxs = np.argsort(sort_val)
+        # keep looping while some indexes still remain in the indexes
+
+    if reverse_sort:
+        idxs = idxs[::-1]
+
     # list
     while len(idxs) > 0:
         # grab the last index in the indexes list and add the
@@ -192,13 +223,16 @@ def non_max_suppression_fast(boxes, overlap_thresh):
         xx2 = np.minimum(x2[i], x2[idxs[:last]])
         yy2 = np.minimum(y2[i], y2[idxs[:last]])
         # compute the width and height of the bounding box
-        w = np.maximum(0, xx2 - xx1 + 1)
-        h = np.maximum(0, yy2 - yy1 + 1)
+        width = np.maximum(0, xx2 - xx1 + 1)
+        height = np.maximum(0, yy2 - yy1 + 1)
         # compute the ratio of overlap
-        overlap = (w * h) / area[idxs[:last]]
+        overlap = (width * height) / area[idxs[:last]]
         # delete all indexes from the index list that have
         idxs = np.delete(idxs, np.concatenate(([last],
                                                np.where(overlap > overlap_thresh)[0])))
     # return only the bounding boxes that were picked using the
     # integer data type
-    return boxes[pick].astype("int")
+    if not ret_sort_val:
+        return boxes[pick].astype("int")
+    else:
+        return boxes[pick].astype("int"), sort_val[pick]
