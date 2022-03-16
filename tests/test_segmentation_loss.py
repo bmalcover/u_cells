@@ -24,13 +24,13 @@ class TestWeightedBCE(TestCase):
         pred = tf.constant(np.zeros((10, 10)))
         target = tf.constant(np.zeros((10, 10)))
 
-        self.assertAlmostEqual(segmentation.bce_weighted_rpn(pred, None, target).numpy(), 0)
+        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 0)
 
     def test_equals_positives(self):
         pred = tf.constant(np.ones((10, 10)))
         target = tf.constant(np.ones((10, 10)))
 
-        self.assertAlmostEqual(segmentation.bce_weighted_rpn(pred, None, target).numpy(), 0)
+        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 0)
 
     def test_equals_multiple(self):
         pred = np.zeros((10, 10))
@@ -42,5 +42,38 @@ class TestWeightedBCE(TestCase):
         pred = tf.constant(pred)
         target = tf.constant(target)
 
-        self.assertAlmostEqual(segmentation.bce_weighted_rpn(pred, None, target).numpy(), 0)
+        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 0)
 
+    def test_diff_small_class(self):
+        pred = np.ones((10, 10))
+        target = np.ones((10, 10))
+
+        target[0:2, 0:2] = 0
+
+        pred = tf.constant(pred)
+        target = tf.constant(target)
+
+        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 7.71, places=2)
+
+    def test_diff_big_class(self):
+        pred = np.ones((10, 10))
+        target = np.zeros((10, 10))
+
+        target[0:2, 0:2] = 1
+
+        pred = tf.constant(pred)
+        target = tf.constant(target)
+
+        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 7.71, places=2)
+
+    def test_diff_both_class(self):
+        pred = np.ones((10, 10))
+        target = np.zeros((10, 10))
+
+        target[0:2, 0:2] = 1
+        pred[0:2, 0:2] = 0
+
+        pred = tf.constant(pred)
+        target = tf.constant(target)
+
+        self.assertGreater(segmentation.WeightedBCE()(target, pred).numpy(), 15)
