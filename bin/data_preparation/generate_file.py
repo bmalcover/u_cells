@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """ This module generates an augmentation of the dataset.
 
 The augmentation is done with the imaug library. The parameters of this library, defined in this
@@ -65,7 +66,7 @@ augmentation = [  # apply the following augmenters to most images
 augmentation = iaa.Sequential(augmentation)
 
 TO_GENERATE = 300
-OUTPUT_FOLDER = os.path.join("..", "..", "out", "augmented")
+OUTPUT_FOLDER = os.path.join("../../u_rpn", "..", "out", "augmented")
 
 
 def get_contour_precedence(contour, cols):
@@ -75,7 +76,7 @@ def get_contour_precedence(contour, cols):
 
 
 def main():
-    path_regions = os.path.join("..", "..", "in", "train")
+    path_regions = os.path.join("../../u_rpn", "..", "in", "train")
     images_info_path = os.path.join(path_regions, "via_region_data.json")
     # images_info = list(images_info.values())  # We do not need the keys
     images_info = normalize_dataset.get_raw_img_and_info(path_regions, images_info_path)
