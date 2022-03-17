@@ -114,7 +114,7 @@ class EncoderUNet(BaseModel, ABC):
 
     def build(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
               layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
-              pool_size: Tuple[int, int] = (2, 2)):
+              pool_size: Tuple[int, int] = (2, 2), training=None):
         # Define input batch shape
         input_image = keras_layer.Input(self._input_size, name="input_image")
         self._layers = {}
@@ -130,7 +130,9 @@ class EncoderUNet(BaseModel, ABC):
         for layer_idx in range(0, layer_depth):
             conv_params['filters'] = n_filters * (2 ** layer_idx)
 
-            x = mm_layers.ConvBlock(layer_idx, name=f"e_conv_block_{layer_idx}", **conv_params)(x)
+            x = mm_layers.ConvBlock(layer_idx,
+                                    name=f"e_conv_block_{layer_idx}",
+                                    **conv_params)(x, training=training)
             self._layers[layer_idx] = x
 
             x = keras_layer.MaxPooling2D(pool_size, name=f"e_max_pool_{layer_idx}")(x)
@@ -155,7 +157,7 @@ class DecoderUNet(BaseModel, ABC):
         merge_branch: Boolean, if true adds an extra output to the decoder that merges the masks.
     """
 
-    def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]],
+    def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int], None],
                  n_channels: int = 1, residual: bool = False, class_output_size=None,
                  merge_branch: bool = False):
         super().__init__(input_size)
@@ -165,9 +167,29 @@ class DecoderUNet(BaseModel, ABC):
         self.__class_output = class_output_size
         self.__merge_branch = merge_branch
 
-    def build(self, n_filters, last_activation: Union[Callable, str], encoder: EncoderUNet,
+    def build(self, n_filters: int, last_activation: Union[Callable, str], encoder: EncoderUNet,
               embedded, extra_layer: dict = None, dilation_rate: int = 1,
-              kernel_size: Tuple[int, int] = (3, 3), coord_conv=None):
+              kernel_size: Tuple[int, int] = (3, 3), coord_conv=None, training=None):
+        """ Builds the decoder of the U-Net.
+
+        The decoder of the U-Net is responsible for the reconstruction of the input image. This
+        implementation has multiples parameter to enhance the abilities of the decoder. The main
+        goal is to be able to use the original decoder for instance segmentation.
+
+        Args:
+            n_filters: Integer, number of filters of the decoder.
+            last_activation: Activation function of the last layer of the decoder.
+            encoder: Encoder of the U-Net.
+            embedded: Emmbedded vector of the encoder.
+            extra_layer: Dictionary of extra layers to be added to the decoder.
+            dilation_rate: Integer, dilation rate of the decoder.
+            kernel_size: Tuple of integers, kernel size of the decoder.
+            coord_conv: Boolean, if true uses coordinades convolutional instead of vanilla
+                        convolutional.
+            training: Boolean, if true the model is always in training mode.
+
+        Returns:
+        """
         conv_params = dict(filters=n_filters,
                            kernel_size=kernel_size,
                            activation='relu',
@@ -198,7 +220,7 @@ class DecoderUNet(BaseModel, ABC):
 
             x = mm_layers.ConvBlock(layer_idx, coord_conv=coord_conv_size,
                                     name=f"d_conv_block_{layer_idx}",
-                                    **conv_params)(x)
+                                    **conv_params)(x, training=training)
 
             self._layers[layer_idx] = x
 
@@ -209,7 +231,11 @@ class DecoderUNet(BaseModel, ABC):
             class_out = keras_layer.GlobalAvgPool2D()(x)
             class_out = keras_layer.Dense(self.__class_output, activation='relu',
                                           name='mask_class_1')(class_out)
-            class_out = keras_layer.Dropout(0.5)(class_out)
+            if training is not None:
+                class_out = keras_layer.Dropout(0.5)(class_out, training=training)
+            else:
+                class_out = keras_layer.Dropout(0.5)(class_out)
+
             class_out = keras_layer.Dense(self.__class_output, activation='relu',
                                           name='mask_class_2')(class_out)
             class_out = keras_layer.Dense(self.__n_channels, activation='sigmoid',

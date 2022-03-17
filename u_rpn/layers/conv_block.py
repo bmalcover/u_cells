@@ -81,18 +81,27 @@ class ConvBlock(keras_layer.Layer):
         x = self.conv2d_1(x)
 
         if self.__is_batch_normalized:
-            x = self.batch_normalization_1(x)
+            if training is not None:
+                x = self.batch_normalization_1(x, training=training)
+            else:
+                x = self.batch_normalization_1(x)
 
         x = self.conv2d_2(x)
 
         if self.__is_batch_normalized:
-            x = self.batch_normalization_2(x)
+            if training is not None:
+                x = self.batch_normalization_2(x, training=training)
+            else:
+                x = self.batch_normalization_2(x)
 
         if self.__residual:
             shortcut = self.shortcut(inputs)
 
             if self.__is_batch_normalized:
-                shortcut = self.shortcut_bn(shortcut)
+                if training is not None:
+                    shortcut = self.shortcut_bn(shortcut, training=training)
+                else:
+                    shortcut = self.shortcut_bn(shortcut)
             x = keras_layer.Add()([x, shortcut])
 
         return x
@@ -100,3 +109,7 @@ class ConvBlock(keras_layer.Layer):
     @property
     def layer_idx(self):
         return self.__layer_idx
+
+    @property
+    def training(self):
+        return self
