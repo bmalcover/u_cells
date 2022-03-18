@@ -42,7 +42,7 @@ class UNet(BaseModel):
 
         self.__batch_normalization: bool = batch_normalization
         self.__n_channels: int = out_channel
-        self.__residual = residual
+        self.__residual: bool = residual
 
     def build(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
               layer_depth: int = 5, kernel_size: Tuple[int, int] = (3, 3),
@@ -63,7 +63,8 @@ class UNet(BaseModel):
         """
         self._layers = {}
 
-        encoder = EncoderUNet(input_size=self._input_size, residual=self.__residual)
+        encoder = EncoderUNet(input_size=self._input_size, residual=self.__residual,
+                              batch_normalization=self.__batch_normalization)
         input_image, embedded = encoder.build(n_filters=n_filters, last_activation=last_activation,
                                               pool_size=pool_size, dilation_rate=dilation_rate,
                                               layer_depth=layer_depth, kernel_size=kernel_size)
@@ -71,7 +72,8 @@ class UNet(BaseModel):
         self._layers['encoder'] = encoder
 
         decoder = DecoderUNet(input_size=self._input_size, residual=self.__residual,
-                              n_channels=self.__n_channels)
+                              n_channels=self.__n_channels,
+                              batch_normalization=self.__batch_normalization)
         mask_out = decoder.build(n_filters=n_filters, last_activation=last_activation,
                                  encoder=encoder, dilation_rate=dilation_rate,
                                  kernel_size=kernel_size, embedded=embedded)
@@ -106,10 +108,11 @@ class UNet(BaseModel):
 
 class EncoderUNet(BaseModel, ABC):
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int]],
-                 residual: bool = False):
+                 residual: bool = False, batch_normalization: bool = True):
         super().__init__(input_size)
 
         self.__residual = residual
+        self.__batch_normalization = batch_normalization
         self._layers = None
 
     def build(self, n_filters, last_activation: Union[Callable, str], dilation_rate: int = 1,
@@ -123,7 +126,7 @@ class EncoderUNet(BaseModel, ABC):
                            kernel_size=kernel_size,
                            activation='relu',
                            residual=self.__residual,
-                           batch_normalization=True)
+                           batch_normalization=self.__batch_normalization)
 
         x = input_image
 
@@ -159,13 +162,14 @@ class DecoderUNet(BaseModel, ABC):
 
     def __init__(self, input_size: Union[Tuple[int, int, int], Tuple[int, int], None],
                  n_channels: int = 1, residual: bool = False, class_output_size=None,
-                 merge_branch: bool = False):
+                 merge_branch: bool = False, batch_normalization: bool = True):
         super().__init__(input_size)
 
         self.__residual = residual
         self.__n_channels = n_channels
         self.__class_output = class_output_size
         self.__merge_branch = merge_branch
+        self.__batch_normalization = batch_normalization
 
     def build(self, n_filters: int, last_activation: Union[Callable, str], encoder: EncoderUNet,
               embedded, extra_layer: dict = None, dilation_rate: int = 1,
@@ -194,7 +198,7 @@ class DecoderUNet(BaseModel, ABC):
                            kernel_size=kernel_size,
                            activation='relu',
                            residual=self.__residual,
-                           batch_normalization=True)
+                           batch_normalization=self.__batch_normalization)
 
         self._layers = {}
         x = embedded

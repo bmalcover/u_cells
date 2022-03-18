@@ -14,7 +14,7 @@ from u_rpn import configurations as u_configs
 class TestRPN(unittest.TestCase):
     @staticmethod
     def __build_model(mode: u_model.rpn.NeuralMode, training=None):
-        encoder = u_model.unet.EncoderUNet(input_size=(512, 512, 3), residual=True)
+        encoder = u_model.unet.EncoderUNet(input_size=(512, 512, 3))
         input_image, embedded = encoder.build(n_filters=16, last_activation='softmax',
                                               dilation_rate=1, layer_depth=5, training=training)
 
