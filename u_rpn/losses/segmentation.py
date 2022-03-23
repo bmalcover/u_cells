@@ -18,6 +18,8 @@ Losses:
 
 Writen by: Miquel Miró Nicolau (UIB)
 """
+from typing import Optional
+
 from tensorflow import keras
 import tensorflow as tf
 import tensorflow.keras.backend as K
@@ -160,6 +162,80 @@ class WeightedBCE(keras.losses.Loss):
 
         return (tf.cast(neg_loss, tf.float32) * self.__positive_w) + (
                 tf.cast(pos_loss, tf.float32) * (1 - self.__positive_w))
+
+
+class WeightedTernaryBCE(keras.losses.Loss):
+    """ Weighted ternary binary cross entropy loss for the RPN.
+
+    To fix unbalanced classes, we split the loss function into positive and negative classes, and
+    we weight the loss of the positive class with the number of positive examples in the batch and
+    the same with the negative class.
+    """
+
+    def __init__(self, weights: Optional[float] = None):
+        super().__init__()
+
+        if weights is None:
+            weights = [0.25, 0.25, 0.5]
+        self.__weights = weights
+
+    def call(self, target, pred, *args, **kwargs):
+        """ Ternary weighted binary cross entropy loss for the RPN.
+
+        To fix unbalanced classes, we split the loss function into positive, false negative and true
+        negatives classes. Loss functions are calculated for each of these three cases and then
+        merged.
+
+        Args:
+            target: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses
+                                zero padding to fill array.
+            pred: ([batch, num_rois, height, width]) float32 tensor with values from 0 to 1.
+
+        Returns:
+
+        """
+        pred = tf.reshape(pred, [-1])
+        target = tf.reshape(target, [-1])
+
+        tp_px = tf.compat.v1.where(tf.math.greater(target, 0))
+        neg_px = tf.compat.v1.where(tf.math.less_equal(target, 0))
+
+        pos_pred = tf.squeeze(tf.gather(pred, tp_px))
+        pos_target = tf.squeeze(tf.gather(target, tp_px))
+
+        neg_pred = tf.squeeze(tf.gather(pred, neg_px))
+        neg_target = tf.squeeze(tf.gather(target, neg_px))
+
+        fn_px = tf.compat.v1.where(tf.math.greater(neg_pred, 0.5))
+        tn_px = tf.compat.v1.where(tf.math.less_equal(neg_pred, 0.5))
+
+        fn_pred = tf.squeeze(tf.gather(neg_pred, fn_px))
+        fn_target = tf.squeeze(tf.gather(neg_target, fn_px))
+
+        tn_pred = tf.squeeze(tf.gather(neg_pred, tn_px))
+        tn_target = tf.squeeze(tf.gather(neg_target, tn_px))
+
+        bce = tf.keras.losses.BinaryCrossentropy(reduction=tf.keras.losses.Reduction.SUM)
+
+        pos_loss = bce(pos_target, pos_pred)
+        fn_loss = bce(fn_target, fn_pred)
+        tn_loss = bce(tn_target, tn_pred)
+
+        fn_loss = K.switch(tf.math.is_nan(fn_loss),
+                           tf.constant(0.0),
+                           fn_loss)
+
+        tn_loss = K.switch(tf.math.is_nan(tn_loss),
+                           tf.constant(0.0),
+                           tn_loss)
+
+        pos_loss = K.switch(tf.math.is_nan(pos_loss),
+                            tf.constant(0.0),
+                            pos_loss)
+
+        return ((tf.cast(fn_loss, tf.float32) * self.__weights[0]) + (
+                 tf.cast(tn_loss, tf.float32) * self.__weights[1])) + \
+               (tf.cast(pos_loss, tf.float32) * self.__weights[2])
 
 
 def mrcnn_mask_loss_graph(target_masks, pred, target_class_ids):
