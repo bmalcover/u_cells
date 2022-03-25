@@ -7,6 +7,7 @@ from unittest import TestCase
 
 import numpy as np
 import tensorflow as tf
+import zarr
 
 from u_rpn.losses import segmentation
 
@@ -77,3 +78,31 @@ class TestWeightedBCE(TestCase):
         target = tf.constant(target)
 
         self.assertGreater(segmentation.WeightedBCE()(target, pred).numpy(), 15)
+
+
+class TestTernaryBCE(TestCase):
+    """ Test suite for ternary binary cross entropy loss.
+
+    Test cases:
+        - Test with inputs all equals to 0.
+        - Test with inputs all equals to 1.
+        - Test with known problematic inputs.
+    """
+
+    def test_all_positives(self):
+        pred = np.ones((10, 10))
+        target = np.ones((10, 10))
+
+        self.assertAlmostEqual(segmentation.WeightedTernaryBCE()(target, pred).numpy(), 0)
+
+    def test_all_negatives(self):
+        pred = np.zeros((10, 10))
+        target = np.zeros((10, 10))
+
+        self.assertAlmostEqual(segmentation.WeightedTernaryBCE()(pred, pred).numpy(), 0)
+
+    def test_known_error(self):
+        target = zarr.load('../in/gt.zarr')
+        pred = zarr.load('../in/masks.zarr')
+
+        segmentation.WeightedTernaryBCE()(target, pred)

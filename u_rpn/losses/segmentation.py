@@ -147,18 +147,10 @@ class WeightedBCE(keras.losses.Loss):
         neg_pred = tf.squeeze(tf.gather(pred, neg_px))
         neg_target = tf.squeeze(tf.gather(target, neg_px))
 
-        bce = tf.keras.losses.BinaryCrossentropy(reduction=tf.keras.losses.Reduction.SUM)
+        bce = OwnBCE(reduction=tf.keras.losses.Reduction.SUM)
 
         pos_loss = bce(pos_target, pos_pred)
         neg_loss = bce(neg_target, neg_pred)
-
-        neg_loss = K.switch(tf.math.is_nan(neg_loss),
-                            tf.constant(0.0),
-                            neg_loss)
-
-        pos_loss = K.switch(tf.math.is_nan(pos_loss),
-                            tf.constant(0.0),
-                            pos_loss)
 
         return (tf.cast(neg_loss, tf.float32) * self.__positive_w) + (
                 tf.cast(pos_loss, tf.float32) * (1 - self.__positive_w))
@@ -176,7 +168,7 @@ class WeightedTernaryBCE(keras.losses.Loss):
         super().__init__()
 
         if weights is None:
-            weights = [0.25, 0.25, 0.5]
+            weights = [0.5, 0.5, 0.5]
         self.__weights = weights
 
     def call(self, target, pred, *args, **kwargs):
@@ -215,27 +207,44 @@ class WeightedTernaryBCE(keras.losses.Loss):
         tn_pred = tf.squeeze(tf.gather(neg_pred, tn_px))
         tn_target = tf.squeeze(tf.gather(neg_target, tn_px))
 
-        bce = tf.keras.losses.BinaryCrossentropy(reduction=tf.keras.losses.Reduction.SUM)
+        bce = OwnBCE(reduction=tf.keras.losses.Reduction.SUM)
 
         pos_loss = bce(pos_target, pos_pred)
         fn_loss = bce(fn_target, fn_pred)
         tn_loss = bce(tn_target, tn_pred)
 
-        fn_loss = K.switch(tf.math.is_nan(fn_loss),
-                           tf.constant(0.0),
-                           fn_loss)
-
-        tn_loss = K.switch(tf.math.is_nan(tn_loss),
-                           tf.constant(0.0),
-                           tn_loss)
-
-        pos_loss = K.switch(tf.math.is_nan(pos_loss),
-                            tf.constant(0.0),
-                            pos_loss)
-
         return ((tf.cast(fn_loss, tf.float32) * self.__weights[0]) + (
-                 tf.cast(tn_loss, tf.float32) * self.__weights[1])) + \
+                tf.cast(tn_loss, tf.float32) * self.__weights[1])) + \
                (tf.cast(pos_loss, tf.float32) * self.__weights[2])
+
+
+class OwnBCE(keras.losses.Loss):
+    """ Own binary cross entropy loss for the RPN.
+
+    This customs loss function is exactly the same as the keras.losses.binary_crossentropy, but now
+    it can be used with predictions and target tensors with one element. Also, instead of returning
+    a NaN it returns 0.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.__bce = tf.keras.losses.BinaryCrossentropy(*args, **kwargs)
+
+    def call(self, target, pred, *args, **kwargs):
+        target = K.switch(tf.math.equal(tf.size(target), 1),
+                          tf.expand_dims(target, 0),
+                          target)
+        pred = K.switch(tf.math.equal(tf.size(pred), 1),
+                        tf.expand_dims(pred, 0),
+                        pred)
+
+        loss = self.__bce(target, pred)
+
+        loss = K.switch(tf.math.is_nan(loss),
+                        tf.constant(0.0),
+                        loss)
+
+        return loss
 
 
 def mrcnn_mask_loss_graph(target_masks, pred, target_class_ids):
