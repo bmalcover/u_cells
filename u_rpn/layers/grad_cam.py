@@ -7,6 +7,8 @@ Written by: Miquel Miró Nicolau (UIB)
 import tensorflow as tf
 import tensorflow.keras.layers as keras_layer
 
+__all__ = ["GradCAM"]
+
 
 class GradCAM(keras_layer.Layer):
     """ GradCAM layer (e.g. gradient between a conv2d and an output)

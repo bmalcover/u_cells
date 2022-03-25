@@ -4,18 +4,22 @@
 Copyright (C) 2020-2022  Miquel Miró Nicolau, UIB
 Written by Miquel Miró (UIB), 2022
 """
+import abc
 import os
 import json
 import enum
 import warnings
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Union
+import glob
 
+import cv2
 import skimage
 import skimage.io
 import skimage.color
 import skimage.transform
 import numpy as np
+import zarr
 
 
 class Subset(enum.Enum):
@@ -24,6 +28,15 @@ class Subset(enum.Enum):
 
     def __str__(self):
         return str(self.name).lower()
+
+
+def prepared_required(input_func):
+    def aux(*args, **kwargs):
+        if not args[0].prepared:
+            raise EnvironmentError("First you must prepare the dataset object")
+        return input_func(*args, **kwargs)
+
+    return aux
 
 
 class Dataset(ABC):
@@ -48,6 +61,8 @@ class Dataset(ABC):
         # Background is always the first class
         self.class_info = [{"source": "", "id": 0, "name": "BG"}]
         self.source_class_ids = {}
+        self.prepared = False
+        self._whole_batch = False
 
     def add_class(self, source, class_id, class_name):
         assert "." not in source, "Source name cannot contain a dot"
@@ -77,7 +92,8 @@ class Dataset(ABC):
         """Return a link to the image in its source Website or details about
         the image that help looking it up or debugging it.
 
-        Override for your dataset, but pass to this function if you encounter images not in your dataset.
+        Override for your dataset, but pass to this function if you encounter images not in your
+        dataset.
         """
         return ""
 
@@ -116,6 +132,7 @@ class Dataset(ABC):
                 # Include BG class in all datasets
                 if i == 0 or source == info['source']:
                     self.source_class_ids[source].append(i)
+        self.prepared = True
 
     def map_source_class_id(self, source_class_id):
         """Takes a source class ID and returns the int class ID assigned to it.
@@ -142,7 +159,8 @@ class Dataset(ABC):
         """
         return self.image_info[image_id]["path"]
 
-    def load_image(self, image_id):
+    @prepared_required
+    def get_image(self, image_id):
         """Load the specified image and return a [H,W,3] Numpy array.
         """
         # Load image
@@ -155,7 +173,8 @@ class Dataset(ABC):
             image = image[..., :3]
         return image
 
-    def load_mask(self, image_id):
+    @abc.abstractmethod
+    def get_mask(self, image_id):
         """Load instance masks for the given image.
 
         Different datasets use different ways to store masks. Override this
@@ -169,14 +188,15 @@ class Dataset(ABC):
         """
         # Override this function to load a mask from your dataset.
         # Otherwise, it returns an empty mask.
-        warnings.warn(
-            "You are using the default load_mask(), maybe you need to define your own one.",
-            RuntimeWarning)
+        raise NotImplementedError
 
-        mask = np.empty([0, 0, 0])
-        class_ids = np.empty([0], np.int32)
+    @abc.abstractmethod
+    def get_data(self, image_id):
+        raise NotImplementedError
 
-        return mask, class_ids
+    @property
+    def whole_batch(self):
+        return self._whole_batch
 
 
 class ErithocytesDataset(Dataset):
@@ -226,7 +246,8 @@ class ErithocytesDataset(Dataset):
                 "cell", image_id=image_key, path=image_path, width=width, height=height,
                 mask_path=mask_path, polygons=polygons, cells_class=cells_class)
 
-    def load_mask(self, image_id: int):
+    @prepared_required
+    def get_mask(self, image_id: int):
         """Generate instance masks for an image.
 
         Args:
@@ -243,6 +264,7 @@ class ErithocytesDataset(Dataset):
 
         return mask, info["cells_class"]
 
+    @prepared_required
     def image_reference(self, image_id) -> str:
         """ Return the path of the image.
 
@@ -250,7 +272,85 @@ class ErithocytesDataset(Dataset):
             image_id: Integer, the image ID.
 
         Returns:
-            Unique id referring to a specific image..
+            Unique id referring to a specific image.
         """
         info = self.image_info[image_id]
         return info["path"]
+
+    def get_data(self, image_id):
+        pass
+
+
+class ErithocytesPreDataset(Dataset):
+    """ Dataset object to read and load images and masks for the RPN model of the erithocytes
+    normalized dataset.
+
+    """
+
+    def get_mask(self, image_id):
+        pass
+
+    def image_reference(self, image_id):
+        """ Return the path of the image.
+
+        Args:
+            image_id: Integer, the image ID.
+
+        Returns:
+            Unique id referring to a specific image.
+        """
+        folder = os.path.join(self.__dataset_dir, image_id)
+
+        return os.path.join(folder, "image.png")
+
+    def __init__(self, dataset_dir, gt_file: str, extension: str = "jpg",
+                 divisor: Union[int, float] = 1, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.__dataset_dir = dataset_dir
+        self.__gt_file = gt_file
+        self.__extension = extension
+        self.__divisor = divisor
+        self.__size_anchors = 0
+        self.__image_size = None
+        self.__cache = {}
+
+        self.prepare()
+
+    @prepared_required
+    def get_data(self, image_id):
+        image_id = str(image_id).zfill(3)
+        folder = os.path.join(self.__dataset_dir, image_id)
+
+        masks = zarr.load(os.path.join(folder, "mask.zarr"))
+
+        if image_id not in self.__cache:
+            image = zarr.load(os.path.join(folder, "image.zarr")) / self.__divisor
+            matches = zarr.load(os.path.join(folder, "matches.zarr"))
+            bboxes = np.load(os.path.join(folder, "bboxes.npy"))
+            gt_class_ids = np.load(os.path.join(folder, "gt_class.npy"))
+
+            self.__cache[image_id] = (image, matches, bboxes, gt_class_ids)
+        else:
+            image, matches, bboxes, gt_class_ids = self.__cache[image_id]
+
+        return image, masks, matches, bboxes, gt_class_ids
+
+    @property
+    def anchors(self):
+        return self.__size_anchors
+
+    def __len__(self):
+        return self.__image_size
+
+    def prepare(self, class_map=None):
+        with open(os.path.join(self.__dataset_dir, self.__gt_file), "r") as f:
+            aux = json.load(f)
+            size_anchors = aux["total_matches"]
+            whole_batch = bool(aux["whole_batch"])
+
+            self._whole_batch = whole_batch
+            self.__size_anchors = size_anchors
+            self.__image_size = len(glob.glob(os.path.join(self.__dataset_dir, "**", "image.zarr")))
+
+            self.prepared = True

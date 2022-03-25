@@ -6,17 +6,19 @@ and outputs a set of rectangular object proposals, each with an objectness score
 processed with a fully-convolutional network.
 
 """
-from typing import Tuple, Union
 import enum
+from typing import Tuple, Union
 
-import tensorflow.keras.models as keras_model
-import tensorflow.keras.layers as keras_layer
-import tensorflow.keras.optimizers as keras_opt
-import tensorflow.keras.backend as keras
 import tensorflow as tf
+import tensorflow.keras.backend as keras
+import tensorflow.keras.layers as keras_layer
+import tensorflow.keras.models as keras_model
+import tensorflow.keras.optimizers as keras_opt
 
 from ..losses import segmentation, bboxes
 from ..model.base_model import BaseModel
+
+__all__ = ["NeuralMode", "RPN"]
 
 
 class NeuralMode(enum.Enum):
