@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-""" Test suite for segmentations loss functions.
+""" Test suite for segmentations bce loss functions.
 
 Written by: Miquel Miró Nicolau (UIB)
 """
@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow as tf
 import zarr
 
-from u_rpn.losses import segmentation
+from u_rpn.losses import bce
 
 
 class TestWeightedBCE(TestCase):
@@ -25,13 +25,13 @@ class TestWeightedBCE(TestCase):
         pred = tf.constant(np.zeros((10, 10)))
         target = tf.constant(np.zeros((10, 10)))
 
-        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 0)
+        self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 0)
 
     def test_equals_positives(self):
         pred = tf.constant(np.ones((10, 10)))
         target = tf.constant(np.ones((10, 10)))
 
-        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 0)
+        self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 0)
 
     def test_equals_multiple(self):
         pred = np.zeros((10, 10))
@@ -43,7 +43,7 @@ class TestWeightedBCE(TestCase):
         pred = tf.constant(pred)
         target = tf.constant(target)
 
-        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 0)
+        self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 0)
 
     def test_diff_small_class(self):
         pred = np.ones((10, 10))
@@ -54,7 +54,7 @@ class TestWeightedBCE(TestCase):
         pred = tf.constant(pred)
         target = tf.constant(target)
 
-        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 7.71, places=2)
+        self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 7.71, places=2)
 
     def test_diff_big_class(self):
         pred = np.ones((10, 10))
@@ -65,7 +65,7 @@ class TestWeightedBCE(TestCase):
         pred = tf.constant(pred)
         target = tf.constant(target)
 
-        self.assertAlmostEqual(segmentation.WeightedBCE()(target, pred).numpy(), 7.71, places=2)
+        self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 7.71, places=2)
 
     def test_diff_both_class(self):
         pred = np.ones((10, 10))
@@ -77,7 +77,7 @@ class TestWeightedBCE(TestCase):
         pred = tf.constant(pred)
         target = tf.constant(target)
 
-        self.assertGreater(segmentation.WeightedBCE()(target, pred).numpy(), 15)
+        self.assertGreater(bce.WeightedBCE()(target, pred).numpy(), 15)
 
 
 class TestTernaryBCE(TestCase):
@@ -93,16 +93,44 @@ class TestTernaryBCE(TestCase):
         pred = np.ones((10, 10))
         target = np.ones((10, 10))
 
-        self.assertAlmostEqual(segmentation.WeightedTernaryBCE()(target, pred).numpy(), 0)
+        self.assertAlmostEqual(bce.WeightedTernaryBCE()(target, pred).numpy(), 0)
 
     def test_all_negatives(self):
         pred = np.zeros((10, 10))
         target = np.zeros((10, 10))
 
-        self.assertAlmostEqual(segmentation.WeightedTernaryBCE()(pred, pred).numpy(), 0)
+        self.assertAlmostEqual(bce.WeightedTernaryBCE()(target, pred).numpy(), 0)
 
     def test_known_error(self):
         target = zarr.load('../in/gt.zarr')
         pred = zarr.load('../in/masks.zarr')
 
-        segmentation.WeightedTernaryBCE()(target, pred)
+        bce.WeightedTernaryBCE()(target, pred)
+
+
+class TestQuaternaryBCE(TestCase):
+    """ Test suite for quaternary binary cross entropy loss.
+
+    Test cases:
+        - Test with inputs all equals to 0.
+        - Test with inputs all equals to 1.
+        - Test with known problematic inputs.
+    """
+
+    def test_all_positives(self):
+        pred = np.ones((10, 10))
+        target = np.ones((10, 10))
+
+        self.assertAlmostEqual(bce.WeightedQuaternaryBCE()(target, pred).numpy(), 0)
+
+    def test_all_negatives(self):
+        pred = np.zeros((10, 10))
+        target = np.zeros((10, 10))
+
+        self.assertAlmostEqual(bce.WeightedQuaternaryBCE()(target, pred).numpy(), 0)
+
+    def test_known_error(self):
+        target = zarr.load('../in/gt.zarr')
+        pred = zarr.load('../in/masks.zarr')
+
+        bce.WeightedQuaternaryBCE()(target, pred)

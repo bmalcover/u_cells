@@ -114,7 +114,6 @@ def plot_loss(name_fn, loss_fn):
 
     plt.legend()
     plt.title(name_fn)
-    # plt.ylim([0, 1])
     plt.show()
 
 
