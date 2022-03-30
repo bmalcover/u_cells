@@ -163,6 +163,68 @@ class WeightedTernaryBCE(keras.losses.Loss):
                (tf.cast(pos_loss, tf.float32) * self.__weights[2])
 
 
+class WeightedTernaryBCEReverse(keras.losses.Loss):
+    """ Weighted reverse ternary binary cross entropy loss for the RPN.
+
+    To fix unbalanced classes, we split the loss function into negatives, false positive,
+    true positives classes, and we weight the loss of each class with the number
+    of pixels within.
+    """
+
+    def __init__(self, weights: Optional[float] = None):
+        super().__init__()
+
+        if weights is None:
+            weights = [0.3, 0.3, 0.3]
+        self.__weights = weights
+
+    def call(self, target, pred, *args, **kwargs):
+        """ Ternary weighted binary cross entropy loss for the RPN.
+
+        To fix unbalanced classes, we split the loss function into positive, false negative and true
+        negatives classes. Loss functions are calculated for each of these three cases and then
+        merged.
+
+        Args:
+            target: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses
+                                zero padding to fill array.
+            pred: ([batch, num_rois, height, width]) float32 tensor with values from 0 to 1.
+
+        Returns:
+
+        """
+        pred = tf.reshape(pred, [-1])
+        target = tf.reshape(target, [-1])
+
+        tp_px = tf.compat.v1.where(tf.math.greater(target, 0))
+        neg_px = tf.compat.v1.where(tf.math.less_equal(target, 0))
+
+        pos_pred = tf.squeeze(tf.gather(pred, tp_px))
+        pos_target = tf.squeeze(tf.gather(target, tp_px))
+
+        neg_pred = tf.squeeze(tf.gather(pred, neg_px))
+        neg_target = tf.squeeze(tf.gather(target, neg_px))
+
+        fp_px = tf.compat.v1.where(tf.math.greater(pos_pred, 0.5))
+        tp_px = tf.compat.v1.where(tf.math.less_equal(pos_pred, 0.5))
+
+        fp_pred = tf.squeeze(tf.gather(pos_pred, fp_px))
+        fp_target = tf.squeeze(tf.gather(pos_target, fp_px))
+
+        tp_pred = tf.squeeze(tf.gather(pos_pred, tp_px))
+        tp_target = tf.squeeze(tf.gather(pos_target, tp_px))
+
+        bce = OwnBCE(reduction=tf.keras.losses.Reduction.SUM)
+
+        neg_loss = bce(neg_target, neg_pred)
+        fp_loss = bce(fp_target, fp_pred)
+        tp_loss = bce(tp_target, tp_pred)
+
+        return ((tf.cast(neg_loss, tf.float32) * self.__weights[0]) + (
+                tf.cast(fp_loss, tf.float32) * self.__weights[1])) + \
+               (tf.cast(tp_loss, tf.float32) * self.__weights[2])
+
+
 class WeightedQuaternaryBCE(keras.losses.Loss):
     """ Weighted quaternary binary cross entropy loss for the RPN.
 

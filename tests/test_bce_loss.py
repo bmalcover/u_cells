@@ -108,6 +108,34 @@ class TestTernaryBCE(TestCase):
         bce.WeightedTernaryBCE()(target, pred)
 
 
+class TestTernaryReverseBCE(TestCase):
+    """ Test suite for ternary binary cross entropy loss.
+
+    Test cases:
+        - Test with inputs all equals to 0.
+        - Test with inputs all equals to 1.
+        - Test with known problematic inputs.
+    """
+
+    def test_all_positives(self):
+        pred = np.ones((10, 10))
+        target = np.ones((10, 10))
+
+        self.assertAlmostEqual(bce.WeightedTernaryBCEReverse()(target, pred).numpy(), 0)
+
+    def test_all_negatives(self):
+        pred = np.zeros((10, 10))
+        target = np.zeros((10, 10))
+
+        self.assertAlmostEqual(bce.WeightedTernaryBCEReverse()(target, pred).numpy(), 0)
+
+    def test_known_error(self):
+        target = zarr.load('../in/gt.zarr')
+        pred = zarr.load('../in/masks.zarr')
+
+        bce.WeightedTernaryBCEReverse()(target, pred)
+
+
 class TestQuaternaryBCE(TestCase):
     """ Test suite for quaternary binary cross entropy loss.
 
