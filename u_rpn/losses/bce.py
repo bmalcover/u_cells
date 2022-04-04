@@ -25,6 +25,12 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 
 
+def conditional_dim_increment(tensor):
+    return K.switch(tf.math.equal(tf.size(tensor), 1),
+                    tf.expand_dims(tensor, 0),
+                    tensor)
+
+
 class OwnBCE(keras.losses.Loss):
     """ Own binary cross entropy loss for the RPN.
 
@@ -39,12 +45,8 @@ class OwnBCE(keras.losses.Loss):
         self.__bce = tf.keras.losses.BinaryCrossentropy(*args, **kwargs)
 
     def call(self, target, pred, *args, **kwargs):
-        target = K.switch(tf.math.equal(tf.size(target), 1),
-                          tf.expand_dims(target, 0),
-                          target)
-        pred = K.switch(tf.math.equal(tf.size(pred), 1),
-                        tf.expand_dims(pred, 0),
-                        pred)
+        target = conditional_dim_increment(target)
+        pred = conditional_dim_increment(pred)
 
         loss = self.__bce(target, pred)
 
@@ -264,8 +266,14 @@ class WeightedQuaternaryBCE(keras.losses.Loss):
         pos_pred = tf.squeeze(tf.gather(pred, tp_px))
         pos_target = tf.squeeze(tf.gather(target, tp_px))
 
+        pos_target = conditional_dim_increment(pos_target)
+        pos_pred = conditional_dim_increment(pos_pred)
+
         neg_pred = tf.squeeze(tf.gather(pred, neg_px))
         neg_target = tf.squeeze(tf.gather(target, neg_px))
+
+        neg_target = conditional_dim_increment(neg_target)
+        neg_pred = conditional_dim_increment(neg_pred)
 
         fn_px = tf.compat.v1.where(tf.math.greater(neg_pred, 0.5))
         tn_px = tf.compat.v1.where(tf.math.less_equal(neg_pred, 0.5))

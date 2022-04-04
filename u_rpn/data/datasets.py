@@ -326,13 +326,13 @@ class ErithocytesPreDataset(Dataset):
 
         if image_id not in self.__cache:
             image = zarr.load(os.path.join(folder, "image.zarr")) / self.__divisor
-            matches = zarr.load(os.path.join(folder, "matches.npy"))
+            matches = zarr.load(os.path.join(folder, "matches.zarr"))
             bboxes = np.load(os.path.join(folder, "bboxes.npy"))
             gt_class_ids = np.load(os.path.join(folder, "gt_class.npy"))
 
             self.__cache[image_id] = (image, matches, bboxes, gt_class_ids)
-
-        image, matches, bboxes, gt_class_ids = self.__cache[image_id]
+        else:
+            image, matches, bboxes, gt_class_ids = self.__cache[image_id]
 
         return image, masks, matches, bboxes, gt_class_ids
 
