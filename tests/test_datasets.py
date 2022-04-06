@@ -25,12 +25,12 @@ class TestReducedDataset(TestCase):
 
         config = cell_config.CellConfig()
         config.IMAGE_SHAPE = [512, 512, 3]
+        config.STEPS_PER_EPOCH = 1
 
-        dataset = datasets.ErithocytesPreDataset("./out/pre_calculate/train", "data.json",
-                                                 divisor=255)
+        dataset = datasets.ErithocytesPreDataset("./in/test_data", "data.json", divisor=255)
         dataset.prepare()
 
-        generator = u_rpn_data.DataGenerator(50, dataset, pre_calculated=True, config=config,
+        generator = u_rpn_data.DataGenerator(2, dataset, pre_calculated=True, config=config,
                                              phantom_output=True, shuffle=False,
                                              size_anchors=dataset.anchors)
 
