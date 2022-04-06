@@ -7,3 +7,4 @@ scipy==1.6.1
 tensorflow==2.7.0
 tqdm==4.62.3
 tensorflow-addons==0.16.1
+zarr==2.11.1

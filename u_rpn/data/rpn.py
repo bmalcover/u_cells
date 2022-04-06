@@ -107,7 +107,8 @@ class DataGenerator(KU.Sequence):
     """
 
     def __init__(self, steps: int, dataset, config, shuffle=True, augmentation=None,
-                 detection_targets=False, cache=None, phantom_output: bool = False):
+                 detection_targets=False, cache=None, phantom_output: bool = False,
+                 pre_calculated: bool = False, size_anchors=None):
 
         self.__steps = steps
         self.image_ids = np.copy(dataset.image_ids)
@@ -116,18 +117,23 @@ class DataGenerator(KU.Sequence):
 
         # Anchors
         # [anchor_count, (y1, x1, y2, x2)]
-        self.backbone_shapes = DataGenerator.__compute_backbone_shapes(config.IMAGE_SHAPE,
-                                                                       config.BACKBONE_STRIDES)
-        self.anchors = DataGenerator.__generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
-                                                                config.RPN_ANCHOR_RATIOS,
-                                                                self.backbone_shapes,
-                                                                config.BACKBONE_STRIDES,
-                                                                config.RPN_ANCHOR_STRIDE)
+        if not pre_calculated:
+            self.backbone_shapes = DataGenerator.__compute_backbone_shapes(config.IMAGE_SHAPE,
+                                                                           config.BACKBONE_STRIDES)
+            self.anchors = DataGenerator.__generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
+                                                                    config.RPN_ANCHOR_RATIOS,
+                                                                    self.backbone_shapes,
+                                                                    config.BACKBONE_STRIDES,
+                                                                    config.RPN_ANCHOR_STRIDE)
 
-        self.shuffle = shuffle
-        self.augmentation = augmentation
+            self.shuffle = shuffle
+            self.augmentation = augmentation
+            size_anchors = self.anchors.shape[0]
+
+        self.__size_anchors = size_anchors
         self.batch_size = self.config.BATCH_SIZE
         self.detection_targets = detection_targets
+        self.__pre_calculated = pre_calculated
         self.__cache = cache
         self.__phantom_output = phantom_output
 
@@ -135,8 +141,44 @@ class DataGenerator(KU.Sequence):
         return self.__steps
 
     def __getitem__(self, batch_idx):
-        if self.__cache is not None and batch_idx in self.__cache:
-            item = self.__cache[batch_idx]
+        batch_rpn_match = np.zeros([self.batch_size, self.__size_anchors, 1], dtype=np.float64)
+        batch_rpn_bbox = np.zeros([self.batch_size, self.config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4],
+                                  dtype=np.float64)
+        batch_images = np.zeros((self.batch_size,) + tuple(self.config.IMAGE_SHAPE),
+                                dtype=np.float32)
+
+        if self.config.COMBINE_FG:
+            mask_depth = 1
+        else:
+            mask_depth = self.config.MAX_GT_INSTANCES
+
+        batch_gt_masks = np.zeros(
+            (self.batch_size, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], mask_depth),
+            dtype=np.float64)
+        batch_gt_class_ids = np.zeros((self.batch_size, self.config.MAX_GT_INSTANCES),
+                                      dtype=np.int32)
+
+        if self.__pre_calculated:
+            b = 0
+            inter_batch_idx = -1
+            if self.dataset.whole_batch:
+                # image, masks, matches, bboxes, gt_class_ids
+                batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids = self.dataset.get_data(
+                    batch_idx)
+            else:
+                while b < self.batch_size:
+                    inter_batch_idx = (inter_batch_idx + 1) % len(self.dataset)
+                    image_index = inter_batch_idx + (self.batch_size * batch_idx)
+
+                    img, masks, matches, bboxes, gt_class = self.dataset.get_data(image_index)
+                    batch_rpn_match[b] = matches
+                    batch_rpn_bbox[b] = bboxes
+                    batch_images[b] = img
+                    batch_gt_masks[b, :, :, :masks.shape[-1]] = masks
+                    batch_gt_class_ids[b, :gt_class.shape[0]] = gt_class
+
+                    b += 1
+
         else:
             b = 0
             inter_batch_idx = -1
@@ -164,28 +206,6 @@ class DataGenerator(KU.Sequence):
                                                                       gt_class_ids, gt_boxes,
                                                                       self.config)
 
-                # Init batch arrays
-                if b == 0:
-                    batch_rpn_match = np.zeros(
-                        [self.batch_size, self.anchors.shape[0], 1], dtype=rpn_match.dtype)
-                    batch_rpn_bbox = np.zeros(
-                        [self.batch_size, self.config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4],
-                        dtype=rpn_bbox.dtype)
-                    batch_images = np.zeros(
-                        (self.batch_size,) + image.shape, dtype=np.float32)
-                    if self.config.COMBINE_FG:
-                        mask_depth = 1
-                    else:
-                        mask_depth = self.config.MAX_GT_INSTANCES
-                    batch_gt_masks = np.zeros(
-                        (self.batch_size, gt_masks.shape[0], gt_masks.shape[1], mask_depth),
-                        dtype=gt_masks.dtype)
-                    batch_gt_class_ids = np.zeros(
-                        (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32)
-
-                    # batch_gt_mask_class
-
-                    # If more instances than fits in the array, sub-sample from them.
                 if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
                     ids = np.random.choice(
                         np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
@@ -200,23 +220,19 @@ class DataGenerator(KU.Sequence):
                 batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
                 b += 1
 
-            if self.config.DO_MASK:
-                inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox,
-                          batch_gt_class_ids]
-            else:
-                inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
+        if self.config.DO_MASK:
+            inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox,
+                      batch_gt_class_ids]
+        else:
+            inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
 
-            if self.__phantom_output:
-                outputs = [np.zeros((4, 512, 512, 100))] + (
-                        [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
-            else:
-                outputs = []
-            item = inputs, outputs
+        if self.__phantom_output:
+            outputs = [np.zeros((4, 512, 512, 100))] + (
+                    [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
+        else:
+            outputs = []
 
-            if self.__cache is not None:
-                self.__cache[batch_idx] = item
-
-        return item
+        return inputs, outputs
 
     @staticmethod
     def __generate_anchors(scales, ratios, shape, feature_stride, anchor_stride):
@@ -432,8 +448,8 @@ class DataGenerator(KU.Sequence):
                   unless use_mini_mask is True, in which case they are defined in MINI_MASK_SHAPE.
         """
         # Load image and mask
-        image = dataset.load_image(image_id)
-        mask, class_ids = dataset.load_mask(image_id)
+        image = dataset.get_image(image_id)
+        mask, class_ids = dataset.get_mask(image_id)
         original_shape = image.shape
 
         window = [0, 0, image.shape[1], image.shape[0]]

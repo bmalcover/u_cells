@@ -12,38 +12,37 @@ Losses:
     dice_aggregated: Dice loss with an aggregation operation. The results will be a single value for
         each channel.
     dice_rpn: Dice loss adapted to the U-RPN architecture.
-    bce_weighted_rpn: Weighted BCE loss adapted to the U-RPN architecture.
     mrcnn_mask_loss_graph: Loss for the mask prediction of the Mask R-CNN model. Based on the
         binary cross entropy loss and applied only to the positives channels.
 
 Writen by: Miquel Miró Nicolau (UIB)
 """
-import tensorflow.keras.backend as keras
 import tensorflow as tf
+import tensorflow.keras.backend as K
 
 
-def dice_expanded(y_true, y_pred, smooth=1):
+def dice_expanded(target, pred, smooth=1):
     """ Computes the Sørensen–Dice coefficient for the batch of images.
 
     Dice = (2*|X & Y|)/ (|X|+ |Y|)
         =  2*sum(|A*B|)/(sum(A^2)+sum(B^2))
 
     Args:
-        y_true: Batch of ground truth masks.
-        y_pred: Batch of predicted masks.
+        target: Batch of ground truth masks.
+        pred: Batch of predicted masks.
         smooth: Smoothing factor. It adds to the numerator and denominator (intersection and union).
 
     Refs:
         https://arxiv.org/pdf/1606.04797v1.pdf
     """
-    intersection = keras.sum(keras.abs(y_true * y_pred), axis=-1)
+    intersection = K.sum(K.abs(target * pred), axis=-1)
     dice = (2. * intersection + smooth) / (
-            keras.sum(keras.square(y_true), -1) + keras.sum(keras.square(y_pred), -1) + smooth)
+            K.sum(K.square(target), -1) + K.sum(K.square(pred), -1) + smooth)
 
     return 1 - dice
 
 
-def dice_aggregated_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5,
+def dice_aggregated_loss(target, pred, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5,
                          mean: bool = True):
     """ Dice coefficient loss function.
 
@@ -54,7 +53,7 @@ def dice_aggregated_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), s
     From: TensorLayer
 
     Args:
-        output (Tensor): A distribution with shape: [batch_size, ....], (any dimensions).
+        pred (Tensor): A distribution with shape: [batch_size, ....], (any dimensions).
         target (Tensor): The target distribution, format the same with `output`.
         loss_type (str): ``jaccard`` or ``sorensen``, default is ``sorensen``.
         axis (tuple | int | None): All dimensions are reduced, default ``[1,2,3]``.
@@ -70,12 +69,12 @@ def dice_aggregated_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), s
     References:
         `Wiki-Dice <https://en.wikipedia.org/wiki/Sørensen–Dice_coefficient>`
     """
-    inse = tf.reduce_sum(output * target, axis=axis)
+    inse = tf.reduce_sum(pred * target, axis=axis)
     if loss_type == 'jaccard':
-        l = tf.reduce_sum(output * output, axis=axis)
+        l = tf.reduce_sum(pred * pred, axis=axis)
         r = tf.reduce_sum(target * target, axis=axis)
     elif loss_type == 'sorensen':
-        l = tf.reduce_sum(output, axis=axis)
+        l = tf.reduce_sum(pred, axis=axis)
         r = tf.reduce_sum(target, axis=axis)
     else:
         raise Exception("Unknow loss_type")
@@ -88,98 +87,51 @@ def dice_aggregated_loss(output, target, loss_type='sorensen', axis=(1, 2, 3), s
     return 1 - dice
 
 
-def dice_rpn(target_masks, target_class_ids, pred_masks):
+def dice_rpn(target, pred, *args, **kwargs):
     """
 
     Args:
-        target_masks: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses
+        target: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses
                                     zero padding to fill array.
-        target_class_ids: Convention
-        pred_masks: ([batch, num_rois, height, width]) float32 tensor with values from 0 to 1.
-
+        pred: ([batch, num_rois, height, width]) float32 tensor with values from 0 to 1.
     Returns:
 
     """
-    loss = keras.switch(tf.math.greater(tf.size(input=target_masks), 0),
-                        dice_expanded(target_masks, pred_masks),
-                        tf.constant(0.0))
-    loss = keras.mean(loss)
+    loss = K.switch(tf.math.greater(tf.size(input=target), 0),
+                    dice_expanded(target, pred),
+                    tf.constant(0.0))
+    loss = K.mean(loss)
     return loss
 
 
-def bce_weighted_rpn(target_masks, target_class_ids, pred_masks):
-    """ Weighted binary cross entropy loss for the RPN.
-
-    To fix unbalanced classes, we split the loss function into positive and negative classes, and
-    we weight the loss of the positive class with the number of positive examples in the batch and
-    the same with the negative class.
-
-    Args:
-        target_masks: ([batch, num_rois, height, width])  A float32 tensor of values 0 or 1. Uses
-                            zero padding to fill array.
-        target_class_ids: Convention
-        pred_masks: ([batch, num_rois, height, width]) float32 tensor with values from 0 to 1.
-
-    Returns:
-
-    """
-    pred_masks = tf.reshape(pred_masks, [-1])
-    target_masks = tf.reshape(target_masks, [-1])
-
-    pos_px = tf.compat.v1.where(tf.math.greater(target_masks, 0))
-    neg_px = tf.compat.v1.where(tf.math.less_equal(target_masks, 0))
-
-    pos_pred = tf.gather(pred_masks, pos_px)
-    pos_target = tf.gather(target_masks, pos_px)
-
-    neg_pred = tf.gather(pred_masks, neg_px)
-    neg_target = tf.gather(target_masks, neg_px)
-
-    pos_loss = keras.binary_crossentropy(pos_target, pos_pred)
-    neg_loss = keras.binary_crossentropy(neg_target, neg_pred)
-
-    neg_loss = keras.mean(neg_loss)
-    pos_loss = keras.mean(pos_loss)
-
-    neg_loss = keras.switch(tf.math.is_nan(neg_loss),
-                            tf.constant(0.0),
-                            neg_loss)
-
-    pos_loss = keras.switch(tf.math.is_nan(pos_loss),
-                            tf.constant(0.0),
-                            pos_loss)
-
-    return (tf.cast(neg_loss, tf.float32) * 0.5) + (tf.cast(pos_loss, tf.float32) * 0.5)
-
-
-def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
+def mrcnn_mask_loss_graph(target_masks, pred, target_class_ids):
     """ Mask binary cross-entropy loss for the masks head.
 
     Args:
         target_masks [batch, num_rois, height, width]: A float32 tensor of values 0 or 1. Uses zero
                                                        padding to fill array.
         target_class_ids [batch, num_rois]: Integer class IDs. Zero padded.
-        pred_masks [batch, height, width, num_classes]: float32 tensor with values from 0
+        pred [batch, height, width, num_classes]: float32 tensor with values from 0
                                                                    to 1.
 
     Returns:
 
     """
-    pred_masks = tf.transpose(a=pred_masks, perm=[0, 3, 1, 2])
+    pred = tf.transpose(a=pred, perm=[0, 3, 1, 2])
     target_masks = tf.transpose(a=target_masks, perm=[0, 3, 1, 2])
 
     # Reshape for simplicity. Merge first two dimensions into one.
-    target_class_ids = keras.reshape(target_class_ids, (-1,))
+    target_class_ids = K.reshape(target_class_ids, (-1,))
     mask_shape = tf.shape(input=target_masks)
-    target_masks = keras.reshape(target_masks, (-1, mask_shape[2], mask_shape[3]))
-    pred_masks = keras.reshape(pred_masks, (-1, mask_shape[2], mask_shape[3]))
+    target_masks = K.reshape(target_masks, (-1, mask_shape[2], mask_shape[3]))
+    pred = K.reshape(pred, (-1, mask_shape[2], mask_shape[3]))
 
     # Only positive ROIs contribute to the loss. And only the class specific mask of each ROI.
     positive_ix = tf.compat.v1.where(target_class_ids > 0)[:, 0]
 
     # Gather the masks (predicted and true) that contribute to loss
     y_true = tf.gather(target_masks, positive_ix)
-    y_pred = tf.gather(pred_masks, positive_ix)
+    y_pred = tf.gather(pred, positive_ix)
 
     # Balanced the mask and the prediction with the same number of positive and negative samples
     y_true = tf.reshape(y_true, (-1,))
@@ -202,8 +154,8 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     # Compute binary cross entropy. If no positive ROIs, then return 0.
     # shape: [batch, roi, num_classes]
 
-    loss = keras.switch(tf.math.greater(tf.size(input=y_true), 0),
-                        keras.binary_crossentropy(target=y_true, output=y_pred),
-                        tf.constant(0.0))
-    loss = keras.mean(loss)
+    loss = K.switch(tf.math.greater(tf.size(input=y_true), 0),
+                    K.binary_crossentropy(target=y_true, output=y_pred),
+                    tf.constant(0.0))
+    loss = K.mean(loss)
     return loss
