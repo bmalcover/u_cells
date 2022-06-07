@@ -16,6 +16,8 @@ import tensorflow.keras.layers as keras_layer
 
 from .. import layers as own_layer
 
+__all__ = ["ConvBlock"]
+
 
 class ConvBlock(keras_layer.Layer):
     """ Convolutional block used on the encoder
