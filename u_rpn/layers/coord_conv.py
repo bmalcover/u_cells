@@ -27,9 +27,10 @@ SOFTWARE.
 Adaptation of the original code to the framework of the U-Net by Miquel Miró (UIB)
 """
 
-from tensorflow.python.layers import base
 import tensorflow as tf
 from tensorflow.keras import layers as keras_layer
+
+__all__ = ["CoordConv"]
 
 
 class AddCoords(keras_layer.Layer):

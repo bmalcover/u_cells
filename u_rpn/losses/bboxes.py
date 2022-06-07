@@ -3,6 +3,8 @@
 
 The defined loss functions on this module are used to calculate the loss of bounding boxes. In
 particular are used for the RPN module from the Faster R-CNN paper.
+
+Wr
 """
 import tensorflow.keras.backend as keras
 import tensorflow as tf
@@ -114,7 +116,7 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
 
         """
         outputs = []
-        for i in range(6):
+        for i in range(5):
             outputs.append(x[i, :counts[i]])  # I imatge, counts[i] bboxes
         return tf.concat(outputs, axis=0)
 

@@ -6,17 +6,19 @@ and outputs a set of rectangular object proposals, each with an objectness score
 processed with a fully-convolutional network.
 
 """
-from typing import Tuple, Union
 import enum
+from typing import Tuple, Union
 
-import tensorflow.keras.models as keras_model
-import tensorflow.keras.layers as keras_layer
-import tensorflow.keras.optimizers as keras_opt
-import tensorflow.keras.backend as keras
 import tensorflow as tf
+import tensorflow.keras.backend as keras
+import tensorflow.keras.layers as keras_layer
+import tensorflow.keras.models as keras_model
+import tensorflow.keras.optimizers as keras_opt
 
 from ..losses import segmentation, bboxes
 from ..model.base_model import BaseModel
+
+__all__ = ["NeuralMode", "RPN"]
 
 
 class NeuralMode(enum.Enum):
@@ -216,10 +218,10 @@ class RPN(BaseModel):
                 if mask_loss is None:
                     mask_loss = keras_layer.Lambda(lambda x: segmentation.dice_rpn(*x),
                                                    name="img_out_loss")(
-                        [input_gt_masks, input_gt_class_ids, mask_output])
+                        [input_gt_masks, mask_output])
                 else:
                     mask_loss = keras_layer.Lambda(lambda x: mask_loss(*x), name="img_out_loss")(
-                        [input_gt_masks, input_gt_class_ids, mask_output])
+                        [input_gt_masks, mask_output])
 
                 self.__losses_layers.append(mask_loss)
 

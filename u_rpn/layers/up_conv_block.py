@@ -14,6 +14,8 @@ from typing import Tuple
 
 import tensorflow.keras.layers as keras_layer
 
+__all__ = ["UpConvBlock"]
+
 
 class UpConvBlock(keras_layer.Layer):
     """ Block to build the decoder.
