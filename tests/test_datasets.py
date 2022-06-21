@@ -13,30 +13,39 @@ from u_rpn.data import rpn as u_rpn_data
 
 
 class TestReducedDataset(TestCase):
-    """ Test the ReducedDataset class.
+    """Test the ReducedDataset class.
 
     Cases:
         - Test the size of the input.
         - Test whether the first and second batch are different.
 
     """
-    def __init__(self, *args, **kwargs):
+
+    def __init__(self, *args: str, **kwargs: str):
         super().__init__(*args, **kwargs)
 
         config = cell_config.CellConfig()
         config.IMAGE_SHAPE = [512, 512, 3]
         config.STEPS_PER_EPOCH = 1
 
-        dataset = datasets.ErithocytesPreDataset("./in/test_data", "data.json", divisor=255)
+        dataset = datasets.ErithocytesPreDataset(
+            "./in/test_data", "data.json", divisor=255
+        )
         dataset.prepare()
 
-        generator = u_rpn_data.DataGenerator(2, dataset, pre_calculated=True, config=config,
-                                             phantom_output=True, shuffle=False,
-                                             size_anchors=dataset.anchors)
+        generator = u_rpn_data.DataGenerator(
+            2,
+            dataset,
+            pre_calculated=True,
+            config=config,
+            phantom_output=True,
+            shuffle=False,
+            size_anchors=dataset.anchors,
+        )
 
         self.__generator = generator
 
-    def test_shape_data(self):
+    def test_shape_data(self) -> None:
         for info, phantom in self.__generator:
             break
 
@@ -45,7 +54,7 @@ class TestReducedDataset(TestCase):
         self.assertAlmostEqual(info[2].shape[1], 49152)
         self.assertAlmostEqual(info[3].shape[1], 256)
 
-    def test_difference_between_batches(self):
+    def test_difference_between_batches(self) -> None:
         images = []
         for i, (info, phantom) in enumerate(self.__generator):
             images.append(info[0])
@@ -55,5 +64,4 @@ class TestReducedDataset(TestCase):
         n_zeros_f_img = np.count_nonzero(images[0] > 0.5)
         n_zeros_s_img = np.count_nonzero(images[1] > 0.5)
 
-        self.assertNotEquals(n_zeros_s_img, n_zeros_f_img)
-
+        self.assertNotEqual(n_zeros_s_img, n_zeros_f_img)

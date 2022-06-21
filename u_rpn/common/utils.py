@@ -6,18 +6,20 @@ functions for the extraction of bounding boxes and handling of images.
 
 Written by Miquel Miró Nicolau (UIB), 2021
 """
+import random
 import warnings
 from distutils.version import LooseVersion
-import random
+from typing import Union
 
-import skimage
 import numpy as np
 import scipy
+import skimage
 
 
 ############################################################
 #  Bounding Boxes
 ############################################################
+
 
 def extract_bboxes(mask, to_list=False):
     """Compute bounding boxes from masks.
@@ -144,7 +146,12 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
         padding: Padding added to the image [(top, bottom), (left, right), (0, 0)]
     """
     if max_dim > image.shape[0] > min_dim and max_dim > image.shape[1] > min_dim:
-        return image, (0, 0, image.shape[1], image.shape[0]), 1, [(0, 0), (0, 0), (0, 0)]
+        return (
+            image,
+            (0, 0, image.shape[1], image.shape[0]),
+            1,
+            [(0, 0), (0, 0), (0, 0)],
+        )
     else:
         # Keep track of image dtype and return results in the same dtype
         image_dtype = image.dtype
@@ -173,8 +180,9 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
 
         # Resize image using bilinear interpolation
         if scale != 1:
-            image = resize(image, (round(h * scale), round(w * scale)),
-                           preserve_range=True)
+            image = resize(
+                image, (round(h * scale), round(w * scale)), preserve_range=True
+            )
 
         # Need padding or cropping?
         if mode == "square":
@@ -185,7 +193,7 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
             left_pad = (max_dim - w) // 2
             right_pad = max_dim - w - left_pad
             padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
-            image = np.pad(image, padding, mode='constant', constant_values=0)
+            image = np.pad(image, padding, mode="constant", constant_values=0)
             window = (top_pad, left_pad, h + top_pad, w + left_pad)
         elif mode == "pad64":
             h, w = image.shape[:2]
@@ -206,7 +214,7 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
             else:
                 left_pad = right_pad = 0
             padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
-            image = np.pad(image, padding, mode='constant', constant_values=0)
+            image = np.pad(image, padding, mode="constant", constant_values=0)
             window = (top_pad, left_pad, h + top_pad, w + left_pad)
         elif mode == "crop":
             # Pick a random crop
@@ -214,14 +222,15 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
             y = random.randint(0, (h - min_dim))
             x = random.randint(0, (w - min_dim))
             crop = (y, x, min_dim, min_dim)
-            image = image[y:y + min_dim, x:x + min_dim]
+            image = image[y: y + min_dim, x: x + min_dim]
             window = (0, 0, min_dim, min_dim)
         else:
             raise Exception(f"Mode {mode} not supported")
         return image.astype(image_dtype), window, scale, padding, crop
 
 
-def resize_mask(mask, scale, padding, crop=None):
+def resize_mask(mask: np.ndarray, scale: Union[int, float], padding: list,
+                crop: list = None) -> np.ndarray:
     """Resizes a mask using the given scale and padding.
     Typically, you get the scale and padding from resize_image() to
     ensure both, the image and the mask, are resized consistently.
@@ -237,15 +246,24 @@ def resize_mask(mask, scale, padding, crop=None):
         mask = scipy.ndimage.zoom(mask, zoom=[scale, scale, 1], order=0)
     if crop is not None:
         y, x, h, w = crop
-        mask = mask[y:y + h, x:x + w]
+        mask = mask[y: y + h, x: x + w]
     else:
-        mask = np.pad(mask, padding, mode='constant', constant_values=0)
+        mask = np.pad(mask, padding, mode="constant", constant_values=0)
     return mask
 
 
-def resize(image, output_shape, order=1, mode='constant', cval=0, clip=True, preserve_range=False,
-           anti_aliasing=False, anti_aliasing_sigma=None):
-    """ A wrapper for Scikit-Image resize().
+def resize(
+        image,
+        output_shape,
+        order=1,
+        mode="constant",
+        cval=0,
+        clip=True,
+        preserve_range=False,
+        anti_aliasing=False,
+        anti_aliasing_sigma=None,
+):
+    """A wrapper for Scikit-Image resize().
 
     Scikit-Image generates warnings on every call to resize() if it doesn't receive the right
     parameters. The right parameters depend on the version of skimage. This solves the problem by
@@ -255,11 +273,24 @@ def resize(image, output_shape, order=1, mode='constant', cval=0, clip=True, pre
     if LooseVersion(skimage.__version__) >= LooseVersion("0.14"):
         # New in 0.14: anti_aliasing. Default it to False for backward
         # compatibility with skimage 0.13.
-        return skimage.transform.resize(image, output_shape,
-                                        order=order, mode=mode, cval=cval, clip=clip,
-                                        preserve_range=preserve_range, anti_aliasing=anti_aliasing,
-                                        anti_aliasing_sigma=anti_aliasing_sigma)
+        return skimage.transform.resize(
+            image,
+            output_shape,
+            order=order,
+            mode=mode,
+            cval=cval,
+            clip=clip,
+            preserve_range=preserve_range,
+            anti_aliasing=anti_aliasing,
+            anti_aliasing_sigma=anti_aliasing_sigma,
+        )
     else:
-        return skimage.transform.resize(image, output_shape,
-                                        order=order, mode=mode, cval=cval, clip=clip,
-                                        preserve_range=preserve_range)
+        return skimage.transform.resize(
+            image,
+            output_shape,
+            order=order,
+            mode=mode,
+            cval=cval,
+            clip=clip,
+            preserve_range=preserve_range,
+        )

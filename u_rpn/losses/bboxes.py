@@ -4,12 +4,12 @@
 The defined loss functions on this module are used to calculate the loss of bounding boxes. In
 particular are used for the RPN module from the Faster R-CNN paper.
 """
-import tensorflow.keras.backend as keras
 import tensorflow as tf
+import tensorflow.keras.backend as keras
 
 
 def positive_cce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-    """ Categorical cross entropy only for the slices with some positive element.
+    """Categorical cross entropy only for the slices with some positive element.
 
     To calculate the loss only takes into consideration the channels with some value different to 0
     in the ground truth.
@@ -33,16 +33,18 @@ def positive_cce(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     y_true = tf.gather(y_true, postives_ix)
     y_pred = tf.gather(y_pred, postives_ix)
 
-    loss = keras.switch(tf.size(input=y_true) > 0,
-                        keras.binary_crossentropy(target=y_true, output=y_pred),
-                        tf.constant(0.0))
+    loss = keras.switch(
+        tf.size(input=y_true) > 0,
+        keras.binary_crossentropy(target=y_true, output=y_pred),
+        tf.constant(0.0),
+    )
     loss = keras.mean(loss)
 
     return loss
 
 
-def smooth_l1_loss(y_true, y_pred):
-    """ Implements Smooth-L1 loss.
+def smooth_l1_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """Implements Smooth-L1 loss.
 
     y_true and y_pred are typically: [N, 4], but could be any shape.
 
@@ -60,8 +62,8 @@ def smooth_l1_loss(y_true, y_pred):
     return loss
 
 
-def class_loss_graph(rpn_match, rpn_class_logits):
-    """ RPN anchor classifier loss.
+def class_loss_graph(rpn_match: tf.Tensor, rpn_class_logits: tf.Tensor) -> tf.Tensor:
+    """RPN anchor classifier loss.
 
     Args:
         rpn_match: [batch, anchors, 1]. Anchor match type. 1=positive,
@@ -79,14 +81,20 @@ def class_loss_graph(rpn_match, rpn_class_logits):
     rpn_class_logits = tf.gather_nd(rpn_class_logits, indices)
     anchor_class = tf.gather_nd(anchor_class, indices)
     # Cross entropy loss
-    loss = keras.sparse_categorical_crossentropy(target=anchor_class,
-                                                 output=rpn_class_logits,
-                                                 from_logits=True)
+    loss = keras.sparse_categorical_crossentropy(
+        target=anchor_class, output=rpn_class_logits, from_logits=True
+    )
     loss = keras.switch(tf.size(input=loss) > 0, keras.mean(loss), tf.constant(0.0))
+
     return loss
 
 
-def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
+def bbox_loss_graph(
+    target_bbox: tf.Tensor,
+    rpn_match: tf.Tensor,
+    rpn_bbox: tf.Tensor,
+    batch_size: int = 3,
+) -> tf.Tensor:
     """
 
     Args:
@@ -101,7 +109,7 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
     """
 
     def batch_pack_graph(x, counts, num_rows):
-        """ Picks different number of values from each row in x depending on the values in counts.
+        """Picks different number of values from each row in x depending on the values in counts.
 
         TODO: Make num_rows (batch size) compatible with tf 2.7
 
@@ -114,8 +122,8 @@ def bbox_loss_graph(target_bbox, rpn_match, rpn_bbox, batch_size: int = 3):
 
         """
         outputs = []
-        for i in range(6):
-            outputs.append(x[i, :counts[i]])  # I imatge, counts[i] bboxes
+        for i in range(num_rows):
+            outputs.append(x[i, : counts[i]])  # I imatge, counts[i] bboxes
         return tf.concat(outputs, axis=0)
 
     # Positive anchors contribute to the loss, but negative and

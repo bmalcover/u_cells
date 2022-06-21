@@ -12,18 +12,28 @@ Written by: Miquel Miró Nicolau (UIB)
 
 from typing import Tuple
 
+import tensorflow as tf
 import tensorflow.keras.layers as keras_layer
+
+__all__ = ["UpConvBlock"]
 
 
 class UpConvBlock(keras_layer.Layer):
-    """ Block to build the decoder.
+    """Block to build the decoder.
 
     The decoder is build with the combination of UpSampling2D and Conv2D.
     """
 
-    def __init__(self, layer_idx: int, filter_size: Tuple[int, int], filters: int,
-                 activation: str = 'relu', padding: str = "same",
-                 kernel_initializer: str = "he_normal", **kwargs):
+    def __init__(
+        self,
+        layer_idx: int,
+        filter_size: Tuple[int, int],
+        filters: int,
+        activation: str = "relu",
+        padding: str = "same",
+        kernel_initializer: str = "he_normal",
+        **kwargs: dict
+    ):
         super(UpConvBlock, self).__init__(**kwargs)
 
         self.__layer_idx = layer_idx
@@ -34,11 +44,15 @@ class UpConvBlock(keras_layer.Layer):
         self.__kernel_initializer: str = kernel_initializer
 
         self.up_sampling_1 = keras_layer.UpSampling2D(size=filter_size)
-        self.conv2d_1 = keras_layer.Conv2D(filters, kernel_size=filter_size,
-                                           activation=activation, padding=padding,
-                                           kernel_initializer=kernel_initializer)
+        self.conv2d_1 = keras_layer.Conv2D(
+            filters,
+            kernel_size=filter_size,
+            activation=activation,
+            padding=padding,
+            kernel_initializer=kernel_initializer,
+        )
 
-    def call(self, inputs, **kwargs):
+    def call(self, inputs, **kwargs) -> tf.Tensor:
         x = inputs
         x = self.up_sampling_1(x)
         x = self.conv2d_1(x)
@@ -47,12 +61,14 @@ class UpConvBlock(keras_layer.Layer):
 
     def get_config(self):
         config = super().get_config().copy()
-        config.update({
-            'layer_idx': self.__layer_idx,
-            'filter_size': self.__filter_size,
-            'filters': self.__filters,
-            'activation': self.__activation,
-            'padding': self.__padding,
-            'kernel_initializer': self.__kernel_initializer
-        })
+        config.update(
+            {
+                "layer_idx": self.__layer_idx,
+                "filter_size": self.__filter_size,
+                "filters": self.__filters,
+                "activation": self.__activation,
+                "padding": self.__padding,
+                "kernel_initializer": self.__kernel_initializer,
+            }
+        )
         return config

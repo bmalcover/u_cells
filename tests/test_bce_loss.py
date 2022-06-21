@@ -7,13 +7,12 @@ from unittest import TestCase
 
 import numpy as np
 import tensorflow as tf
-import zarr
 
 from u_rpn.losses import bce
 
 
 class TestWeightedBCE(TestCase):
-    """ Test suite for weighted binary cross entropy loss.
+    """Test suite for weighted binary cross entropy loss.
 
     Test cases:
         - Test with inputs all equals to 0.
@@ -21,19 +20,19 @@ class TestWeightedBCE(TestCase):
         - Test with half of the inputs equals to 1.
     """
 
-    def test_all_negatives(self):
+    def test_all_negatives(self) -> None:
         pred = tf.constant(np.zeros((10, 10)))
         target = tf.constant(np.zeros((10, 10)))
 
         self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 0)
 
-    def test_all_positives(self):
+    def test_all_positives(self) -> None:
         pred = tf.constant(np.ones((10, 10)))
         target = tf.constant(np.ones((10, 10)))
 
         self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 0)
 
-    def test_equals_multiple(self):
+    def test_equals_multiple(self) -> None:
         pred = np.zeros((10, 10))
         target = np.zeros((10, 10))
 
@@ -45,7 +44,7 @@ class TestWeightedBCE(TestCase):
 
         self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 0)
 
-    def test_diff_small_class(self):
+    def test_diff_small_class(self) -> None:
         pred = np.ones((10, 10))
         target = np.ones((10, 10))
 
@@ -56,7 +55,7 @@ class TestWeightedBCE(TestCase):
 
         self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 7.71, places=2)
 
-    def test_diff_big_class(self):
+    def test_diff_big_class(self) -> None:
         pred = np.ones((10, 10))
         target = np.zeros((10, 10))
 
@@ -67,7 +66,7 @@ class TestWeightedBCE(TestCase):
 
         self.assertAlmostEqual(bce.WeightedBCE()(target, pred).numpy(), 7.71, places=2)
 
-    def test_diff_both_class(self):
+    def test_diff_both_class(self) -> None:
         pred = np.ones((10, 10))
         target = np.zeros((10, 10))
 
@@ -79,7 +78,7 @@ class TestWeightedBCE(TestCase):
 
         self.assertGreater(bce.WeightedBCE()(target, pred).numpy(), 15)
 
-    def test_one_element_tensor(self):
+    def test_one_element_tensor(self) -> None:
         target = tf.constant(0, dtype=tf.float64)
         pred = tf.constant(0, dtype=tf.float64)
 
@@ -87,7 +86,7 @@ class TestWeightedBCE(TestCase):
 
 
 class TestTernaryBCE(TestCase):
-    """ Test suite for ternary binary cross entropy loss.
+    """Test suite for ternary binary cross entropy loss.
 
     Test cases:
         - Test with inputs all equals to 0.
@@ -95,19 +94,19 @@ class TestTernaryBCE(TestCase):
         - Test with known problematic inputs.
     """
 
-    def test_all_positives(self):
+    def test_all_positives(self) -> None:
         pred = np.ones((10, 10))
         target = np.ones((10, 10))
 
         self.assertAlmostEqual(bce.WeightedTernaryBCE()(target, pred).numpy(), 0)
 
-    def test_all_negatives(self):
+    def test_all_negatives(self) -> None:
         pred = np.zeros((10, 10))
         target = np.zeros((10, 10))
 
         self.assertAlmostEqual(bce.WeightedTernaryBCE()(target, pred).numpy(), 0)
 
-    def test_one_element_tensor(self):
+    def test_one_element_tensor(self) -> None:
         target = tf.constant(0, dtype=tf.float64)
         pred = tf.constant(0, dtype=tf.float64)
 
@@ -115,7 +114,7 @@ class TestTernaryBCE(TestCase):
 
 
 class TestTernaryReverseBCE(TestCase):
-    """ Test suite for ternary binary cross entropy loss.
+    """Test suite for ternary binary cross entropy loss.
 
     Test cases:
         - Test with inputs all equals to 0.
@@ -123,19 +122,19 @@ class TestTernaryReverseBCE(TestCase):
         - Test with known problematic inputs.
     """
 
-    def test_all_positives(self):
+    def test_all_positives(self) -> None:
         pred = np.ones((10, 10))
         target = np.ones((10, 10))
 
         self.assertAlmostEqual(bce.WeightedTernaryBCEReverse()(target, pred).numpy(), 0)
 
-    def test_all_negatives(self):
+    def test_all_negatives(self) -> None:
         pred = np.zeros((10, 10))
         target = np.zeros((10, 10))
 
         self.assertAlmostEqual(bce.WeightedTernaryBCEReverse()(target, pred).numpy(), 0)
 
-    def test_one_element_tensor(self):
+    def test_one_element_tensor(self) -> None:
         target = tf.constant(0, dtype=tf.float64)
         pred = tf.constant(0, dtype=tf.float64)
 
@@ -143,7 +142,7 @@ class TestTernaryReverseBCE(TestCase):
 
 
 class TestQuaternaryBCE(TestCase):
-    """ Test suite for quaternary binary cross entropy loss.
+    """Test suite for quaternary binary cross entropy loss.
 
     Test cases:
         - Test with inputs all equals to 0.
@@ -151,24 +150,24 @@ class TestQuaternaryBCE(TestCase):
         - Test with known problematic inputs.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         self.__loss = bce.WeightedQuaternaryBCE()
 
-    def test_all_positives(self):
+    def test_all_positives(self) -> None:
         pred = np.ones((10, 10))
         target = np.ones((10, 10))
 
         self.assertAlmostEqual(self.__loss(target, pred).numpy(), 0)
 
-    def test_all_negatives(self):
+    def test_all_negatives(self) -> None:
         pred = np.zeros((10, 10))
         target = np.zeros((10, 10))
 
         self.assertAlmostEqual(self.__loss(target, pred).numpy(), 0)
 
-    def test_one_element_tensor(self):
+    def test_one_element_tensor(self) -> None:
         target = tf.constant(0, dtype=tf.float64)
         pred = tf.constant(0, dtype=tf.float64)
 

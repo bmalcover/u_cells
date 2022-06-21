@@ -27,7 +27,7 @@ class CellConfig(rpn_config.Config):
     DETECTION_MIN_CONFIDENCE = 0
     PRED_THRESHOLD = 0.99999995
 
-    IMAGE_SHAPE = [128, 128, 3]
+    IMAGE_SHAPE: list = [128, 128, 3]
 
     IMAGE_MAX_DIM = 512
     IMAGE_MIN_DIM = 400
