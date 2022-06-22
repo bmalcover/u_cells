@@ -1,5 +1,5 @@
 # coding=utf-8
-
+""" Configuration file for pypi package."""
 from os import path
 
 from setuptools import setup
@@ -14,7 +14,7 @@ with open("requirements.txt") as fp:
 
 setup(
     name="u_rpn",
-    version="0.9",
+    version="0.9.1",
     description="Combinations of the U-Net and RPN",
     url="https://github.com/bmalcover/u_cells",
     author="Miquel Miró Nicolau, Dr. Gabriel Moyà Alcover",
