@@ -8,6 +8,8 @@ decoding as a custom layer.
 
 Written by: Miquel Miró Nicolau (UIB), 2022.
 """
+from typing import Tuple
+
 import tensorflow as tf
 import tensorflow.keras.layers as keras_layer
 from tensorflow.keras import backend as K
@@ -16,11 +18,40 @@ __all__ = ["DeltaDecoder"]
 
 
 class DeltaDecoder(keras_layer.Layer):
-    def __init__(self, anchors: tf.Tensor, size: int, *args: list, **kwargs: dict):
+    def __init__(self, anchors: tf.Tensor, output_size: int, size: Tuple[int, int], *args: list,
+                 **kwargs: dict):
         super(DeltaDecoder, self).__init__(*args, **kwargs)
 
         self.__anchors = anchors
+        self.__output_size = output_size
         self.__size = size
+
+    def get_config(self) -> dict:
+        """Returns the config of the layer.
+
+        A layer config is a Python dictionary (serializable) containing the configuration of a
+        layer. The same layer can be reinstantiated later (without its trained weights) from this
+        configuration.
+
+        The config of a layer does not include connectivity information, nor the layer class name.
+        These are handled by `Network` (one layer of abstraction above).
+
+        Note that `get_config()` does not guarantee to return a fresh copy of dict every time it is
+        called. The callers should make a copy of the returned dict if they want to modify it.
+
+        Returns:
+            Python dictionary.
+        """
+        config = super().get_config().copy()
+        config.update(
+            {
+                "anchors": self.__anchors.numpy().tolist(),
+                "size": self.__size,
+                "output_size": self.__output_size
+            }
+        )
+
+        return config
 
     def __decode_deltas(self, deltas: tf.Tensor) -> tf.Tensor:
         """Converts deltas to original coordinates system.
@@ -41,21 +72,21 @@ class DeltaDecoder(keras_layer.Layer):
         width = anchors_width * deltas_3
 
         center_y = (deltas[:, :, 0] * anchors_height) + (
-            self.__anchors[:, :, 0] + 0.5 * anchors_height
+                self.__anchors[:, :, 0] + 0.5 * anchors_height
         )
         center_x = (deltas[:, :, 1] * anchors_width) + (
-            self.__anchors[:, :, 1] + 0.5 * anchors_width
+                self.__anchors[:, :, 1] + 0.5 * anchors_width
         )
 
-        bboxes_y = center_y - 0.5 * height
-        bboxes_x = center_x - 0.5 * width
+        bboxes_y = (center_y - 0.5 * height)
+        bboxes_x = (center_x - 0.5 * width)
 
         b_boxes = tf.stack(
             [
-                bboxes_y,
-                bboxes_x,
-                bboxes_y + height,
-                bboxes_x + width,
+                bboxes_y / self.__size[1],
+                bboxes_x / self.__size[0],
+                (bboxes_y + height) / self.__size[1],
+                (bboxes_x + width) / self.__size[0],
             ]
         )
 
@@ -73,8 +104,8 @@ class DeltaDecoder(keras_layer.Layer):
         bboxes, _, _, _ = tf.image.combined_non_max_suppression(
             boxes=bboxes[:, :, :],
             scores=objectness[:, :, 0],
-            max_output_size_per_class=self.__size,
-            max_total_size=self.__size,
+            max_output_size_per_class=self.__output_size,
+            max_total_size=self.__output_size,
             iou_threshold=0.5,
             score_threshold=0.7,
         )

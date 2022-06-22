@@ -57,6 +57,8 @@ class AddCoords(keras_layer.Layer):
             }
         )
 
+        return config
+
     def call(self, inputs, **kwargs):
         """
 

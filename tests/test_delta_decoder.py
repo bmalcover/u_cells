@@ -36,7 +36,7 @@ class TestDeltaDecoder(TestCase):
         deltas = keras_layers.Input(shape=(None, 4))
         obj_ness = keras_layers.Input(shape=(None, 2))
 
-        out = rpn_layers.DeltaDecoder(self.__anchors, size)(deltas, obj_ness)
+        out = rpn_layers.DeltaDecoder(self.__anchors, size, (512, 512))(deltas, obj_ness)
         model = keras_models.Model([deltas, obj_ness], out)
 
         return model

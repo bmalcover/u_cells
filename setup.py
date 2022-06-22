@@ -14,7 +14,7 @@ with open("requirements.txt") as fp:
 
 setup(
     name="u_rpn",
-    version="0.9.1",
+    version="0.10",
     description="Combinations of the U-Net and RPN",
     url="https://github.com/bmalcover/u_cells",
     author="Miquel Miró Nicolau, Dr. Gabriel Moyà Alcover",
