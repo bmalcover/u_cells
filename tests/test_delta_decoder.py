@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+""" Suite of tests for the delta decoder layer.
+
+Written by: Miquel Miró Nicolau (UIB), 2022
+"""
 from unittest import TestCase
 
 import tensorflow as tf

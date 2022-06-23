@@ -103,7 +103,7 @@ class DeltaDecoder(keras_layer.Layer):
 
         bboxes, _, _, _ = tf.image.combined_non_max_suppression(
             boxes=bboxes[:, :, :],
-            scores=objectness[:, :, 0],
+            scores=objectness[:, :, 1],
             max_output_size_per_class=self.__output_size,
             max_total_size=self.__output_size,
             iou_threshold=0.5,
