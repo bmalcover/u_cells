@@ -8,5 +8,6 @@ from .coord_conv import CoordConv
 from .delta_decode import DeltaDecoder
 from .grad_cam import GradCAM
 from .up_conv_block import UpConvBlock
+from .draw_boxes import DrawBoxes
 
 __all__ = []
