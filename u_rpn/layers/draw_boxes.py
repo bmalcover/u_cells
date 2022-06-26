@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing a keras layer to draw bounding boxes.
 
 Written by: Miquel Miró Nicolau (UIB), 2022.
@@ -15,8 +14,9 @@ tf.no_gradient("DrawBoundingBoxesV2")
 
 
 class DrawBoxes(keras_layer.Layer):
-
-    def __init__(self, image_size: Tuple[int, int, int, int], *args: list, **kwargs: dict):
+    def __init__(
+        self, image_size: Tuple[int, int, int, int], *args: list, **kwargs: dict
+    ):
         super().__init__(*args, **kwargs)
 
         self.__image_size = image_size
@@ -47,7 +47,7 @@ class DrawBoxes(keras_layer.Layer):
         return config
 
     def __number_of_slices(self) -> int:
-        """ Returns the number of slices in the image.
+        """Returns the number of slices in the image.
 
         The number of slices is the number of bounding boxes in the batch:
             number_of_slices = batch_size * number_of_bboxes
@@ -58,7 +58,7 @@ class DrawBoxes(keras_layer.Layer):
         return self.__image_size[0] * self.__image_size[-1]
 
     def call(self, bboxes: tf.Tensor, *args: list, **kwargs: dict) -> tf.Tensor:
-        """ Method called for the forward pass of the layer.
+        """Method called for the forward pass of the layer.
 
         Args:
             bboxes: Tensor with the bounding boxes [batch, number_of_bboxes, [y1, x1, y2, x2]].
@@ -68,14 +68,31 @@ class DrawBoxes(keras_layer.Layer):
         Returns:
             Tensor with the bounding boxes drawn.
         """
-        boxes = keras_layer.Lambda(lambda x: tf.reshape(x, (-1, 1, 4)))(
-            bboxes)
+        boxes = tf.reshape(bboxes, (-1, 1, 4))
 
         images = tf.image.draw_bounding_boxes(
             images=tf.zeros(
-                (self.__number_of_slices(), self.__image_size[1], self.__image_size[2], 1)),
+                (
+                    self.__number_of_slices(),
+                    self.__image_size[1],
+                    self.__image_size[2],
+                    1,
+                )
+            ),
             boxes=boxes,
-            colors=np.array([[1.0, 0.0, 0.0]]))  # No té gradient
-        images = tf.reshape(images, self.__image_size)
+            colors=np.array([[1.0, 0.0, 0.0]]),
+        )
+
+        images = tf.transpose(images, [3, 0, 1, 2])
+        images = tf.reshape(
+            images,
+            [
+                self.__image_size[0],
+                self.__image_size[-1],
+                self.__image_size[1],
+                self.__image_size[2],
+            ],
+        )
+        images = tf.transpose(images, [0, 2, 3, 1])
 
         return images
