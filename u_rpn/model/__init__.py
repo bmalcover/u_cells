@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module to build and use the UNet and U-RPN.
 
 Writen by: Miquel Miró Nicolau (UIB), 2020

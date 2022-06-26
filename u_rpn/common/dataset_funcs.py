@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing common functions for the main programs.
 
 Copyright (C) 2020-2022  Miquel Miró Nicolau, UIB

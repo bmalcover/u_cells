@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Script for the detection of high density areas in a given image.
 
 Copyright (C) 2020-2022  Miquel Miró Nicolau, UIB

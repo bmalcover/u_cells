@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ CoordConv layer, first introduced by Liu et al. (2018)
 
 Refs:
@@ -39,7 +38,7 @@ class AddCoords(keras_layer.Layer):
     def __init__(
         self, x_dim=64, y_dim=64, with_r=False, skip_tile=False, *args, **kwargs
     ):
-        super(AddCoords, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.__x_dim = x_dim
         self.__y_dim = y_dim
@@ -133,7 +132,7 @@ class CoordConv(keras_layer.Layer):
         *args,
         **kwargs
     ):
-        super(CoordConv, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.__x_dim = x_dim
         self.__y_dim = y_dim

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing all the RPN data classes.
 
 The RPN data classes are used to store the data of bounding boxes and its related masks, its based

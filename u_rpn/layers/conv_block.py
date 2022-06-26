@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Block to build the encoder of the U-Net.
 
 Build through the combination of Convolutional and MaxPooling layers, the main goal of this block
@@ -35,7 +34,7 @@ class ConvBlock(keras_layer.Layer):
         batch_normalization: bool = False,
         **kwargs
     ):
-        super(ConvBlock, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         self.__layer_idx: int = layer_idx
         self.__filters: int = filters

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing a set of own build layers
 
 Written by: Miquel Miró Nicolau (UIB)

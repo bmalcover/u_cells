@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Suite of tests for the Draw Bbox layer.
 
 Written by: Miquel Miró Nicolau (UIB), 2022
@@ -22,7 +21,7 @@ class TestDeltaDecoder(TestCase):
     """
 
     def __init__(self, *args: list, **kwargs: dict):
-        super(TestDeltaDecoder, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.__anchors = tf.ones((1, 200, 4))
 

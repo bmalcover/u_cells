@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Data generators used by the U-Net neural network.
 
 """

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Test suite for reduced dataset and reduced data generator classes.
 
 Written by: Miquel Miró Nicolau (UIB)

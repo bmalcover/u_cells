@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Metrics to measure the performance of segmentation methods.
 
 Written by: Miquel Miró Nicolau (UIB), 2022.

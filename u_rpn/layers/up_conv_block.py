@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Block to build the decoder of the U-Net.
 
 UpConvBlock consists of the combination of an UpSampling2D and a Conv2D. This configuration could
@@ -34,7 +33,7 @@ class UpConvBlock(keras_layer.Layer):
         kernel_initializer: str = "he_normal",
         **kwargs: dict
     ):
-        super(UpConvBlock, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         self.__layer_idx = layer_idx
         self.__filter_size = filter_size

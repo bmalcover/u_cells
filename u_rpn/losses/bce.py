@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Segmentation losses based on binary cross-entropy (BCE) for the training of FCN models.
 
 The losses defined in this module has as the main feature the ability to be used for the comparasion

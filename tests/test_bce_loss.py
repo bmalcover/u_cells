@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Test suite for segmentations bce loss functions.
 
 Written by: Miquel Miró Nicolau (UIB)

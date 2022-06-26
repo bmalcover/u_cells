@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing the Earth Mover's Distance loss function.
 
 Obtained from: https://github.com/MilesGrey/emd/
@@ -67,7 +66,7 @@ class EmdWeightHeadStart(Callback):
     """
 
     def __init__(self):
-        super(EmdWeightHeadStart, self).__init__()
+        super().__init__()
         self.emd_weight = 0
         self.epoch = 0
         self.cross_entropy_loss_history = []
@@ -91,7 +90,7 @@ class GroundDistanceManager(Callback):
     """Class for managing the generation and update of the ground distance matrix."""
 
     def __init__(self, file_path: Path):
-        super(GroundDistanceManager, self).__init__()
+        super().__init__()
         self.ground_distance_matrix = None
         self.epoch_class_features = []
         self.epoch_labels = []

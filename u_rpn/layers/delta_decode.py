@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ New keras layer to perform delta decoding of the RPN output.
 
 The output of the RPN is a tensor of shape (batch_size, num_anchors, 4) where the last dimension
@@ -18,9 +17,15 @@ __all__ = ["DeltaDecoder"]
 
 
 class DeltaDecoder(keras_layer.Layer):
-    def __init__(self, anchors: tf.Tensor, output_size: int, size: Tuple[int, int], *args: list,
-                 **kwargs: dict):
-        super(DeltaDecoder, self).__init__(*args, **kwargs)
+    def __init__(
+        self,
+        anchors: tf.Tensor,
+        output_size: int,
+        size: Tuple[int, int],
+        *args: list,
+        **kwargs: dict
+    ):
+        super().__init__(*args, **kwargs)
 
         self.__anchors = anchors
         self.__output_size = output_size
@@ -47,7 +52,7 @@ class DeltaDecoder(keras_layer.Layer):
             {
                 "anchors": self.__anchors.numpy().tolist(),
                 "size": self.__size,
-                "output_size": self.__output_size
+                "output_size": self.__output_size,
             }
         )
 
@@ -72,14 +77,14 @@ class DeltaDecoder(keras_layer.Layer):
         width = anchors_width * deltas_3
 
         center_y = (deltas[:, :, 0] * anchors_height) + (
-                self.__anchors[:, :, 0] + 0.5 * anchors_height
+            self.__anchors[:, :, 0] + 0.5 * anchors_height
         )
         center_x = (deltas[:, :, 1] * anchors_width) + (
-                self.__anchors[:, :, 1] + 0.5 * anchors_width
+            self.__anchors[:, :, 1] + 0.5 * anchors_width
         )
 
-        bboxes_y = (center_y - 0.5 * height)
-        bboxes_x = (center_x - 0.5 * width)
+        bboxes_y = center_y - 0.5 * height
+        bboxes_x = center_x - 0.5 * width
 
         b_boxes = tf.stack(
             [

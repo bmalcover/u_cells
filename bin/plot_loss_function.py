@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Script for the generation of plots for different loss functions.
 
 Written by: Miquel Miró Nicolau (UIB)

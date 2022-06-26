@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Configuration for the eritocitos dataset.
 
 Writen by: Miquel Miró Nicolau (UIB), 2022

@@ -6,8 +6,8 @@ Writen by: Miquel Miró Nicolau (UIB), 2021
 from .conv_block import ConvBlock
 from .coord_conv import CoordConv
 from .delta_decode import DeltaDecoder
+from .draw_boxes import DrawBoxes
 from .grad_cam import GradCAM
 from .up_conv_block import UpConvBlock
-from .draw_boxes import DrawBoxes
 
 __all__ = []

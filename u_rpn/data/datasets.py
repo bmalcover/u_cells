@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ The datasets are python objects to read and load images for the RPN model.
 
 Copyright (C) 2020-2022  Miquel Miró Nicolau, UIB
@@ -31,7 +30,7 @@ class Subset(enum.Enum):
 def prepared_required(input_func):
     def aux(*args, **kwargs):
         if not args[0].prepared:
-            raise EnvironmentError("First you must prepare the dataset object")
+            raise OSError("First you must prepare the dataset object")
         return input_func(*args, **kwargs)
 
     return aux
@@ -126,7 +125,7 @@ class Dataset(ABC):
         }
 
         # Map sources to class_ids they support
-        self.sources = list(set([i["source"] for i in self.class_info]))
+        self.sources = list({i["source"] for i in self.class_info})
         self.source_class_ids = {}
         # Loop over datasets
         for source in self.sources:
@@ -372,7 +371,7 @@ class ErithocytesPreDataset(Dataset):
         return self.__image_size
 
     def prepare(self, class_map=None):
-        with open(os.path.join(self.__dataset_dir, self.__gt_file), "r") as f:
+        with open(os.path.join(self.__dataset_dir, self.__gt_file)) as f:
             aux = json.load(f)
             size_anchors = aux["total_matches"]
             whole_batch = bool(aux["whole_batch"])

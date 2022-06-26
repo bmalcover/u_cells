@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Test suites for U-RPN network
 
 Written by: Miquel Miró Nicolau (UIB), 2022

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ This module generates an augmentation of the dataset.
 
 The augmentation is done with the imaug library. The parameters of this library, defined in this

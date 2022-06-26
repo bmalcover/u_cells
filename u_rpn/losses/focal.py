@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing focal loss function.
 
 Writen by: Miquel Miró Nicolau (UIB)

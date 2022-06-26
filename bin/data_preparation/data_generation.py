@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Main script to test multiple library features
 
 This script contains a small demo of the abilities of this library. In particular call to the

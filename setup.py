@@ -1,4 +1,3 @@
-# coding=utf-8
 """ Configuration file for pypi package."""
 from os import path
 

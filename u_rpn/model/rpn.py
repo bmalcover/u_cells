@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing all RPN classes and methods.
 
 First proposed by Ren et al. a Region Proposal Network (RPN) takes an image (of any size) as input
@@ -350,9 +349,7 @@ class RPN(BaseModel):
             **kwargs: Additional keyword arguments.
         """
         if self.__mode is NeuralMode.INFERENCE:
-            raise EnvironmentError(
-                f"The model should not be compiled in {self.__mode} mode."
-            )
+            raise OSError(f"The model should not be compiled in {self.__mode} mode.")
 
         loss_names = ["rpn_class_loss", "rpn_bbox_loss"]
 
@@ -451,7 +448,7 @@ class RPN(BaseModel):
 
         """
         if self.__mode is NeuralMode.TRAIN:
-            raise EnvironmentError(
+            raise OSError(
                 "This method only can be called if the Mode is set to inference"
             )
 

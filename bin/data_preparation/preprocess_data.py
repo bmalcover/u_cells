@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ This module normalize the dataset to be able to use it with the generators.
 
 Copyright (C) 2020-2022  Miquel Miró Nicolau, UIB

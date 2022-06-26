@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing all functions to build the U-Net model.
 
 This module contains the set of functions that defines the original U-Net networks. This network was
@@ -190,7 +189,7 @@ class EncoderUNet(BaseModel, ABC):
         x = input_image
 
         for layer_idx in range(0, layer_depth):
-            conv_params["filters"] = n_filters * (2 ** layer_idx)
+            conv_params["filters"] = n_filters * (2**layer_idx)
 
             x = mm_layers.ConvBlock(
                 layer_idx, name=f"e_conv_block_{layer_idx}", **conv_params
@@ -279,12 +278,12 @@ class DecoderUNet(BaseModel, ABC):
         self._layers = {}
         layer = embedded
         for layer_idx in range(len(encoder) - 1, -1, -1):
-            conv_params["filters"] = n_filters * (2 ** layer_idx)
+            conv_params["filters"] = n_filters * (2**layer_idx)
 
             layer = mm_layers.UpConvBlock(
                 layer_idx,
                 filter_size=(2, 2),
-                filters=n_filters * (2 ** layer_idx),
+                filters=n_filters * (2**layer_idx),
                 activation="relu",
                 name=f"d_up_conv_block{layer_idx}",
             )(layer)
