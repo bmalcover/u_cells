@@ -22,6 +22,8 @@ class DeltaDecoder(keras_layer.Layer):
         anchors: tf.Tensor,
         output_size: int,
         size: Tuple[int, int],
+        iou_threshold: float = 0.3,
+        score_threshold: float = 0.9,
         *args: list,
         **kwargs: dict
     ):
@@ -30,6 +32,8 @@ class DeltaDecoder(keras_layer.Layer):
         self.__anchors = anchors
         self.__output_size = output_size
         self.__size = size
+        self.__iou_threshold = iou_threshold
+        self.__score_threshold = score_threshold
 
     def get_config(self) -> dict:
         """Returns the config of the layer.
@@ -53,6 +57,8 @@ class DeltaDecoder(keras_layer.Layer):
                 "anchors": self.__anchors.numpy().tolist(),
                 "size": self.__size,
                 "output_size": self.__output_size,
+                "iou_threshold": self.__iou_threshold,
+                "score_threshold": self.__score_threshold,
             }
         )
 
@@ -111,8 +117,8 @@ class DeltaDecoder(keras_layer.Layer):
             scores=objectness[:, :, 1],
             max_output_size_per_class=self.__output_size,
             max_total_size=self.__output_size,
-            iou_threshold=0.5,
-            score_threshold=0.7,
+            iou_threshold=self.__iou_threshold,
+            score_threshold=self.__score_threshold,
         )
 
         return bboxes
