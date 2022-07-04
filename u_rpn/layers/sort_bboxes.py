@@ -50,7 +50,7 @@ class SortBboxes(keras_layer.Layer):
         tolerance_factor = self.__tolerance_factor
 
         return (
-            (tensor[:, :, 1] // tolerance_factor) * tolerance_factor
+            (tensor[:, :, 2] // tolerance_factor) * tolerance_factor
         ) * self.__height + tensor[:, :, 0]
 
     def call(self, inputs: tf.Tensor, *args: list, **kwargs: dict) -> tf.Tensor:
