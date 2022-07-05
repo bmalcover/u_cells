@@ -54,21 +54,23 @@ class MaskBboxes(keras_layers.Layer):
         Returns:
             tf.Tensor: Mask with the bounding box.
         """
-        pos_y, pos_x, height, width = tf.unstack(bbox)
+        pos_y1, pos_x1, pos_y2, pos_x2 = tf.unstack(bbox)
 
-        zeros_to_left = tf.zeros((pos_x, self.__image_size[1]))
+        height = pos_y2 - pos_y1
+        width = pos_x2 - pos_x1
+
+        zeros_to_left = tf.zeros((pos_x1, self.__image_size[1]))
 
         zeros_and_bbox = tf.concat(
             [
-                tf.zeros((width, pos_y)),
+                tf.zeros((width, pos_y1)),
                 tf.ones((width, height)),
-                tf.zeros((width, self.__image_size[1] - (pos_y + height))),
+                tf.zeros((width, self.__image_size[1] - pos_y2)),
             ],
             axis=1,
         )
-        zeros_to_right = tf.zeros(
-            (self.__image_size[0] - (pos_x + width), self.__image_size[1])
-        )
+        zeros_to_right = tf.zeros((self.__image_size[0] - pos_x2, self.__image_size[1]))
+        tf.print(tf.shape(zeros_to_right))
 
         return tf.concat([zeros_to_left, zeros_and_bbox, zeros_to_right], axis=0)
 
