@@ -61,10 +61,13 @@ class MaskBboxes(keras_layers.Layer):
 
         masks = tf.map_fn(self.__draw_bbox, boxes)
         new_shape = (
-            original_shape[0],
-            original_shape[1],
+            original_shape[0],  # channels
+            original_shape[1],  # batch
             self.__image_size[0],
             self.__image_size[1],
         )
 
-        return tf.reshape(masks, new_shape)
+        masks = tf.reshape(masks, new_shape)
+        masks = tf.transpose(masks, [0, 2, 3, 1])
+
+        return masks

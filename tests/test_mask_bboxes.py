@@ -51,7 +51,7 @@ class TestMaskBboxes(TestCase):
 
         res = model.predict(bbox)
 
-        self.assertTupleEqual(res.shape, (1, 2, 10, 10))
+        self.assertTupleEqual(res.shape, (1, 10, 10, 2))
 
     def test_draw(self) -> None:
         """Unit test for the drawing of the bounding boxes.
@@ -65,6 +65,6 @@ class TestMaskBboxes(TestCase):
 
         res = model.predict(bbox)
 
-        first_px = res[0, 0, :, :][2][2]
+        first_px = res[0, :, :, 0][2][2]
 
         self.assertAlmostEqual(first_px, 1)
