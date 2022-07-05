@@ -12,7 +12,7 @@ from tensorflow.keras import models as keras_models
 from u_rpn import layers as rpn_layers
 
 
-class TestDeltaDecoder(TestCase):
+class TestDrawBboxes(TestCase):
     """Suite of tests for the Draw Boxes layer.
 
     Tests:
@@ -47,7 +47,7 @@ class TestDeltaDecoder(TestCase):
 
     def test_shape_b1(self) -> None:
         """Test the shape of the output of the layer with a batch size of 1."""
-        model = TestDeltaDecoder.__build_test_model((6, 128, 128, 80))
+        model = TestDrawBboxes.__build_test_model((6, 128, 128, 80))
 
         output = model.predict(tf.ones((6, 80, 4)))
 
@@ -55,7 +55,7 @@ class TestDeltaDecoder(TestCase):
 
     def test_shape_b10(self) -> None:
         """Test the shape of the output of the layer with a batch size of 10."""
-        model = TestDeltaDecoder.__build_test_model((6, 128, 128, 80))
+        model = TestDrawBboxes.__build_test_model((6, 128, 128, 80))
         output = model.predict(tf.ones((6, 80, 4)))
 
         self.assertAlmostEqual(output.shape[-1], 80)
