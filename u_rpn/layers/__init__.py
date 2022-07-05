@@ -8,6 +8,7 @@ from .coord_conv import CoordConv
 from .delta_decode import DeltaDecoder
 from .draw_boxes import DrawBoxes
 from .grad_cam import GradCAM
+from .mask_bboxes import MaskBboxes
 from .sort_bboxes import SortBboxes
 from .up_conv_block import UpConvBlock
 
