@@ -9,11 +9,19 @@ __all__ = ["SortBboxes"]
 
 
 class SortBboxes(keras_layer.Layer):
-    def __init__(self, tolerance_factor: int = 100, height: int = 100, *args, **kwargs):
+    def __init__(
+        self,
+        tolerance_factor: int = 100,
+        height: int = 100,
+        order: str = "ASCENDING",
+        *args,
+        **kwargs
+    ):
         super().__init__(**kwargs)
 
         self.__tolerance_factor = tolerance_factor
         self.__height = height
+        self.__order = order
 
     def get_config(self) -> dict:
         """Returns the config of the layer.
@@ -33,7 +41,11 @@ class SortBboxes(keras_layer.Layer):
         """
         config = super().get_config().copy()
         config.update(
-            {"tolerance_factor": self.__tolerance_factor, "height": self.__height}
+            {
+                "tolerance_factor": self.__tolerance_factor,
+                "height": self.__height,
+                "order": self.__order,
+            }
         )
 
         return config
@@ -50,8 +62,8 @@ class SortBboxes(keras_layer.Layer):
         tolerance_factor = self.__tolerance_factor
 
         return (
-            (tensor[:, :, 2] // tolerance_factor) * tolerance_factor
-        ) * self.__height + tensor[:, :, 0]
+            (tensor[:, :, 0] // tolerance_factor) * tolerance_factor
+        ) * self.__height + tensor[:, :, 2]
 
     def call(self, inputs: tf.Tensor, *args: list, **kwargs: dict) -> tf.Tensor:
         """Feed forward method.
@@ -67,7 +79,7 @@ class SortBboxes(keras_layer.Layer):
             Ordered tensor
         """
         key_s = self.get_precedence(inputs)
-        key_ss = tf.argsort(key_s, direction="DESCENDING")
+        key_ss = tf.argsort(key_s, direction=self.__order)
 
         inputs = tf.gather(inputs, key_ss, batch_dims=1, axis=1)
         return inputs
