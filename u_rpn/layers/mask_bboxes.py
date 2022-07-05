@@ -20,6 +20,31 @@ class MaskBboxes(keras_layers.Layer):
 
         self.__image_size = image_size
 
+    def get_config(self) -> dict:
+        """Returns the config of the layer.
+
+        A layer config is a Python dictionary (serializable) containing the configuration of a
+        layer. The same layer can be reinstantiated later (without its trained weights) from this
+        configuration.
+
+        The config of a layer does not include connectivity information, nor the layer class name.
+        These are handled by `Network` (one layer of abstraction above).
+
+        Note that `get_config()` does not guarantee to return a fresh copy of dict every time it is
+        called. The callers should make a copy of the returned dict if they want to modify it.
+
+        Returns:
+            Python dictionary.
+        """
+        config = super().get_config().copy()
+        config.update(
+            {
+                "image_size": self.__image_size,
+            }
+        )
+
+        return config
+
     def __draw_bbox(self, bbox) -> tf.Tensor:
         """Draws a bounding box as a mask.
 
