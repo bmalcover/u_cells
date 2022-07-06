@@ -63,7 +63,7 @@ class SortBboxes(keras_layer.Layer):
 
         return (
             (tensor[:, :, 0] // tolerance_factor) * tolerance_factor
-        ) * self.__height + tensor[:, :, 2]
+        ) * self.__height + tensor[:, :, 1]
 
     def call(self, inputs: tf.Tensor, *args: list, **kwargs: dict) -> tf.Tensor:
         """Feed forward method.
