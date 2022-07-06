@@ -47,7 +47,7 @@ class TestMaskBboxes(TestCase):
         """
         model = TestMaskBboxes.__build_test_model((10, 10))
 
-        bbox = tf.convert_to_tensor([[[2, 2, 3, 3], [2, 4, 3, 7]]], dtype=tf.int32)
+        bbox = tf.convert_to_tensor([[[0.1, 0.1, 0.2, 0.2], [0.1, 0.2, 0.5, 0.3]]])
 
         res = model.predict(bbox)
 
@@ -61,7 +61,7 @@ class TestMaskBboxes(TestCase):
         """
         model = TestMaskBboxes.__build_test_model((10, 10))
 
-        bbox = tf.convert_to_tensor([[[2, 2, 3, 5], [2, 4, 4, 7]]], dtype=tf.int32)
+        bbox = tf.convert_to_tensor([[[0.2, 0.2, 0.3, 0.5], [0.2, 0.4, 0.4, 0.7]]])
 
         res = model.predict(bbox)
 
