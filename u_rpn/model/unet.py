@@ -172,7 +172,6 @@ class EncoderUNet(BaseModel, ABC):
         input_size: Union[Tuple[int, int, int], Tuple[int, int]],
         residual: bool = False,
         batch_normalization: bool = True,
-        coord_conv: Optional[Tuple[int, int]] = None,
     ):
         """Construct the model with the attributes for the encoder.
 
@@ -180,13 +179,11 @@ class EncoderUNet(BaseModel, ABC):
             input_size: Tuple of the input size of the model.
             residual: Boolean to indicate if the residual connections should be used.
             batch_normalization: Boolean to indicate if the batch normalization should be used.
-            coord_conv: Tuple of the size of the coordinate convolutional layer.
         """
         super().__init__(input_size)
 
         self.__residual = residual
         self.__batch_normalization = batch_normalization
-        self.__coord_conv = coord_conv
         self._layers = None
 
     def build(
@@ -196,6 +193,7 @@ class EncoderUNet(BaseModel, ABC):
         kernel_size: Tuple[int, int] = (3, 3),
         pool_size: Tuple[int, int] = (2, 2),
         training: Optional[bool] = None,
+        coord_conv: Optional[dict] = None,
     ) -> Tuple[keras_layer.Layer, keras_layer.Layer]:
         """Builds the encoder of the U-Net.
 
@@ -208,6 +206,7 @@ class EncoderUNet(BaseModel, ABC):
             kernel_size: Tuple of the size of the kernel to use in the convolutional layers.
             pool_size: Tuple of the size of the pooling to use in the convolutional layers.
             training: Boolean to indicate if the model is in training mode.
+            coord_conv: Dictionary with the size of the coordinate convolutional layer.
         Returns:
 
         """
@@ -221,13 +220,18 @@ class EncoderUNet(BaseModel, ABC):
             activation="relu",
             residual=self.__residual,
             batch_normalization=self.__batch_normalization,
-            coord_conv=self.__coord_conv,
         )
 
         x = input_image
 
         for layer_idx in range(0, layer_depth):
             conv_params["filters"] = n_filters * (2**layer_idx)
+
+            coord_conv_size = None
+            if coord_conv is not None and layer_idx in coord_conv:
+                coord_conv_size = coord_conv[layer_idx]
+
+            conv_params["coord_conv"] = coord_conv_size
 
             x = mm_layers.ConvBlock(
                 layer_idx, name=f"e_conv_block_{layer_idx}", **conv_params
