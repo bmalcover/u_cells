@@ -154,26 +154,63 @@ class UNet(BaseModel):
 
 
 class EncoderUNet(BaseModel, ABC):
+    """Class that represents the Encoder model of the U-Net.
+
+    Methods:
+        build(
+            n_filters,
+            layer_depth: int = 5,
+            kernel_size: Tuple[int, int] = (3, 3),
+            pool_size: Tuple[int, int] = (2, 2),
+            training: Optional[bool] = None,
+        ):
+            Builds the Encoder of the model.
+    """
+
     def __init__(
         self,
         input_size: Union[Tuple[int, int, int], Tuple[int, int]],
         residual: bool = False,
         batch_normalization: bool = True,
+        coord_conv: Optional[Tuple[int, int]] = None,
     ):
+        """Construct the model with the attributes for the encoder.
+
+        Args:
+            input_size: Tuple of the input size of the model.
+            residual: Boolean to indicate if the residual connections should be used.
+            batch_normalization: Boolean to indicate if the batch normalization should be used.
+            coord_conv: Tuple of the size of the coordinate convolutional layer.
+        """
         super().__init__(input_size)
 
         self.__residual = residual
         self.__batch_normalization = batch_normalization
+        self.__coord_conv = coord_conv
         self._layers = None
 
     def build(
         self,
-        n_filters,
+        n_filters: int,
         layer_depth: int = 5,
         kernel_size: Tuple[int, int] = (3, 3),
         pool_size: Tuple[int, int] = (2, 2),
         training: Optional[bool] = None,
-    ):
+    ) -> Tuple[keras_layer.Layer, keras_layer.Layer]:
+        """Builds the encoder of the U-Net.
+
+        Method that builds the encoder of the U-Net. The encoder is a stack of convolutional blocks
+        that reduce the size of the input image to an embedding vector.
+
+        Args:
+            n_filters: Number of filters to use in the convolutional layers.
+            layer_depth: Number of layers to use in the encoder.
+            kernel_size: Tuple of the size of the kernel to use in the convolutional layers.
+            pool_size: Tuple of the size of the pooling to use in the convolutional layers.
+            training: Boolean to indicate if the model is in training mode.
+        Returns:
+
+        """
         # Define input batch shape
         input_image = keras_layer.Input(self._input_size, name="input_image")
         self._layers = {}
@@ -184,6 +221,7 @@ class EncoderUNet(BaseModel, ABC):
             activation="relu",
             residual=self.__residual,
             batch_normalization=self.__batch_normalization,
+            coord_conv=self.__coord_conv,
         )
 
         x = input_image
@@ -216,6 +254,7 @@ class DecoderUNet(BaseModel, ABC):
             the classification of the output channels between if there are object in the channel or
             only background.
         merge_branch: Boolean, if true adds an extra output to the decoder that merges the masks.
+        mask_product: Boolean , if true multiplies the masks to the output.
     """
 
     def __init__(
@@ -226,6 +265,7 @@ class DecoderUNet(BaseModel, ABC):
         class_output_size=None,
         merge_branch: bool = False,
         batch_normalization: bool = True,
+        mask_product: bool = False,
     ):
         super().__init__(input_size)
 
@@ -234,6 +274,7 @@ class DecoderUNet(BaseModel, ABC):
         self.__class_output = class_output_size
         self.__merge_branch = merge_branch
         self.__batch_normalization = batch_normalization
+        self.__mask_product = mask_product
 
     def build(
         self,
@@ -241,7 +282,8 @@ class DecoderUNet(BaseModel, ABC):
         last_activation: Union[Callable, str],
         encoder: EncoderUNet,
         embedded,
-        extra_layer: dict = None,
+        concat: Optional[dict] = None,
+        product: Optional[dict] = None,
         dilation_rate: int = 1,
         kernel_size: Tuple[int, int] = (3, 3),
         coord_conv=None,
@@ -258,7 +300,8 @@ class DecoderUNet(BaseModel, ABC):
             last_activation: Activation function of the last layer of the decoder.
             encoder: Encoder of the U-Net.
             embedded: Emmbedded vector of the encoder.
-            extra_layer: Dictionary of extra layers to be added to the decoder.
+            concat: Dictionary of extra layers to be concatenated to the decoder.
+            product: Dictionary of extra layers to be added, by product, to the decoder.
             dilation_rate: Integer, dilation rate of the decoder.
             kernel_size: Tuple of integers, kernel size of the decoder.
             coord_conv: Boolean, if true uses coordinades convolutional instead of vanilla
@@ -289,10 +332,15 @@ class DecoderUNet(BaseModel, ABC):
             )(layer)
 
             encoder_layer = encoder[layer_idx]
-            if extra_layer is not None and layer_idx in extra_layer:
-                encoder_layer = keras_layer.Concatenate(
-                    axis=-1, name=f"d_concatenate_extra_{layer_idx}"
-                )([encoder_layer, extra_layer[layer_idx]])
+
+            for op_name, layers, operation in [
+                ("concatenate", concat, keras_layer.Concatenate),
+                ("product", product, keras_layer.Multiply),
+            ]:
+                if layers is not None and layer_idx in layers:
+                    encoder_layer = operation(
+                        axis=-1, name=f"d_{op_name}_extra_{layer_idx}"
+                    )([encoder_layer, concat[layer_idx]])
 
             layer = keras_layer.Concatenate(axis=-1, name=f"d_concatenate_{layer_idx}")(
                 [layer, encoder_layer]
@@ -320,6 +368,10 @@ class DecoderUNet(BaseModel, ABC):
             kernel_initializer="he_normal",
             name="img_out",
         )(layer)
+
+        if self.__mask_product and -1 in product:
+            out_mask = keras_layer.Multiply()([out_mask, product[-1]])
+
         if self.__class_output is not None:
             class_out = keras_layer.GlobalAvgPool2D()(layer)
             class_out = keras_layer.Dense(
@@ -344,9 +396,17 @@ class DecoderUNet(BaseModel, ABC):
             output = [out_mask]
 
         if self.__merge_branch:
+            merge_branch = keras_layer.Conv2D(
+                self.__n_channels,
+                (1, 1),
+                activation=last_activation,
+                padding="same",
+                dilation_rate=dilation_rate,
+                kernel_initializer="he_normal",
+            )(out_mask)
             merge_branch = keras_layer.Lambda(
                 lambda t: tf.reduce_sum(t, axis=-1), name="merge_branch"
-            )(out_mask)
+            )(merge_branch)
             output.append(merge_branch)
 
         return tuple(output)
