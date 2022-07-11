@@ -58,6 +58,7 @@ class AddCoords(keras_layer.Layer):
 
         return config
 
+    @tf.autograph.experimental.do_not_convert
     def call(self, inputs, **kwargs):
         """
 
@@ -101,8 +102,12 @@ class AddCoords(keras_layer.Layer):
         yy_channel = tf.matmul(yy_range, yy_ones)  # e.g. (batch, 64, 64)
         yy_channel = tf.expand_dims(yy_channel, -1)  # e.g. (batch, 64, 64, 1)
 
-        xx_channel = tf.cast(xx_channel, "float32") / (self.__x_dim - 1)
-        yy_channel = tf.cast(yy_channel, "float32") / (self.__y_dim - 1)
+        xx_channel = tf.cast(xx_channel, tf.float32) / tf.cast(
+            self.__x_dim - 1, tf.float32
+        )
+        yy_channel = tf.cast(yy_channel, tf.float32) / tf.cast(
+            self.__y_dim - 1, tf.float32
+        )
         xx_channel = xx_channel * 2 - 1  # [-1,1]
         yy_channel = yy_channel * 2 - 1
 
@@ -155,6 +160,7 @@ class CoordConv(keras_layer.Layer):
             **kwargs
         )
 
+    @tf.autograph.experimental.do_not_convert
     def call(self, inputs, **kwargs):
         ret = self.add_coords(inputs)
         ret = self.conv(ret)

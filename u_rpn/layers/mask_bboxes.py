@@ -45,6 +45,7 @@ class MaskBboxes(keras_layers.Layer):
 
         return config
 
+    @tf.autograph.experimental.do_not_convert
     def __draw_bbox(self, bbox) -> tf.Tensor:
         """Draws a bounding box as a mask.
 
@@ -77,6 +78,7 @@ class MaskBboxes(keras_layers.Layer):
 
         return tf.concat([zeros_to_left, zeros_and_bbox, zeros_to_right], axis=0)
 
+    @tf.autograph.experimental.do_not_convert
     def call(self, inputs, *args, **kwargs) -> tf.Tensor:
         """Forward pass of the layer.
 

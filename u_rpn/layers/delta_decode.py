@@ -105,6 +105,7 @@ class DeltaDecoder(keras_layer.Layer):
 
         return b_boxes
 
+    @tf.autograph.experimental.do_not_convert
     @tf.function
     def call(self, deltas: tf.Tensor, objectness: tf.Tensor, *args, **kwargs):
         bboxes = self.__decode_deltas(deltas)

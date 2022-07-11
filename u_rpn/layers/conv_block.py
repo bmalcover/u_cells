@@ -11,6 +11,7 @@ Written by: Miquel Miró Nicolau (UIB)
 
 from typing import Tuple
 
+import tensorflow as tf
 import tensorflow.keras.layers as keras_layer
 
 from .. import layers as own_layer
@@ -97,6 +98,7 @@ class ConvBlock(keras_layer.Layer):
         )
         return config
 
+    @tf.autograph.experimental.do_not_convert
     def call(self, inputs, training=None, **kwargs):
         x = inputs
         x = self.conv2d_1(x)
