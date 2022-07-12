@@ -355,10 +355,13 @@ class WU4BCE(WeightedQuaternaryBCE):
 
         return tf.reduce_sum(loss * loss_norm, axis=-1)
 
+    @tf.autograph.experimental.do_not_convert
     def call(
         self, target: tf.Tensor, pred: tf.Tensor, *args: list, **kwargs: dict
     ) -> tf.Tensor:
         original_shape = tf.shape(target)
+        target = tf.cast(target, tf.float64)
+        pred = tf.cast(pred, tf.float64)
 
         target = tf.transpose(target, (0, 3, 1, 2))
         pred = tf.transpose(pred, (0, 3, 1, 2))
