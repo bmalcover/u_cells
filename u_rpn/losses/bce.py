@@ -318,9 +318,56 @@ class WeightedQuaternaryBCE(keras.losses.Loss):
         fn_loss = bce(fn_target, fn_pred)
         tn_loss = bce(tn_target, tn_pred)
 
-        return (
-            tf.cast(fp_loss, tf.float32) * self.__weights[0]
-            + tf.cast(tp_loss, tf.float32) * self.__weights[1]
-            + tf.cast(fn_loss, tf.float32) * self.__weights[2]
-            + tf.cast(tn_loss, tf.float32) * self.__weights[3]
+        loss = (
+            tf.cast(fp_loss, tf.float64) * self.__weights[0]
+            + tf.cast(tp_loss, tf.float64) * self.__weights[1]
+            + tf.cast(fn_loss, tf.float64) * self.__weights[2]
+            + tf.cast(tn_loss, tf.float64) * self.__weights[3]
         )
+
+        return loss
+
+
+class WU4BCE(WeightedQuaternaryBCE):
+    """Weighted Unsorted quaternary binary cross-entropy
+
+    To fix unbalanced classes, we split the loss function into false positives, true positive,
+    false negative, true negatives classes, and we weight the loss of each class with the number
+    of pixels within. This loss function is able to handle unsorted classes.
+
+    """
+
+    def __qbce_by_channel(self, targets, pred_tensor) -> tf.Tensor:
+        """Compute the quaternary binary cross-entropy loss for each channel.
+
+        Args:
+            targets: Tensor of shape [num_channels, height, width]
+            pred_tensor: Tensor of shape [height, width]
+
+        Returns:
+            Tensor of shape [num_channels]
+        """
+        fn_call = super().call
+
+        loss = tf.map_fn(fn=lambda x: fn_call(x, pred_tensor), elems=targets)
+
+        loss_norm = tf.nn.softmax(tf.reduce_max(loss) - loss)
+
+        return tf.reduce_sum(loss * loss_norm, axis=-1)
+
+    def call(
+        self, target: tf.Tensor, pred: tf.Tensor, *args: list, **kwargs: dict
+    ) -> tf.Tensor:
+        original_shape = tf.shape(target)
+
+        target = tf.transpose(target, (0, 3, 1, 2))
+        pred = tf.transpose(pred, (0, 3, 1, 2))
+
+        target = tf.reshape(target, (-1, original_shape[1], original_shape[2]))
+        pred = tf.reshape(pred, (-1, original_shape[1], original_shape[2]))
+
+        loss_by_channel = tf.map_fn(
+            fn=lambda x: self.__qbce_by_channel(target, x), elems=pred
+        )
+
+        return tf.reduce_mean(loss_by_channel)

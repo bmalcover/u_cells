@@ -14,7 +14,7 @@ import tensorflow.keras.layers as keras_layer
 import tensorflow.keras.models as keras_model
 import tensorflow.keras.optimizers as keras_opt
 
-from ..losses import bboxes, segmentation
+from ..losses import bboxes, bce
 from ..model.base_model import BaseModel
 
 __all__ = ["NeuralMode", "RPN"]
@@ -273,7 +273,7 @@ class RPN(BaseModel):
 
                 if mask_loss is None:
                     mask_loss = keras_layer.Lambda(
-                        lambda x: segmentation.dice_rpn(*x), name="img_out_loss"
+                        lambda x: bce.WeightedQuaternaryBCE()(*x), name="img_out_loss"
                     )([input_gt_masks, mask_output])
                 else:
                     mask_loss = keras_layer.Lambda(
