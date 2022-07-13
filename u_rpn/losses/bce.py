@@ -14,7 +14,7 @@ Losses:
     WeightedQuaternaryBCE: Weighted true positive, false positive, true negative and false negative
                             BCE loss adapted to the U-RPN architecture.
 
-Writen by: Miquel Miró Nicolau (UIB)
+Writen by: Miquel Miró Nicolau (UIB), 2022
 """
 
 from typing import List, Optional
@@ -347,7 +347,7 @@ class WU4BCE(WeightedQuaternaryBCE):
         Returns:
             Tensor of shape [num_channels]
         """
-        fn_call = super().call
+        fn_call = WeightedQuaternaryBCE()
 
         loss = tf.map_fn(fn=lambda x: fn_call(x, pred_tensor), elems=targets)
 

@@ -6,15 +6,16 @@ proposed by Ronnenberger et al. and is based from an Encoder-Decoder architectur
 Written by: Miquel Miró Nicolau (UIB)
 """
 from abc import ABC
-from typing import Callable, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import tensorflow as tf
 import tensorflow.keras.layers as keras_layer
 import tensorflow.keras.models as keras_model
 from tensorflow.keras import optimizers as opt
 
-from .. import layers as mm_layers
-from ..model.base_model import BaseModel
+from u_rpn import branches as mm_branches
+from u_rpn import layers as mm_layers
+from u_rpn.model.base_model import BaseModel
 
 __all__ = ["EncoderUNet", "DecoderUNet", "UNet"]
 
@@ -275,7 +276,7 @@ class DecoderUNet(BaseModel, ABC):
 
         self.__residual = residual
         self.__n_channels = n_channels
-        self.__class_output = class_output_size
+        self._filters_mc = class_output_size
         self.__merge_branch = merge_branch
         self.__batch_normalization = batch_normalization
         self.__mask_product = mask_product
@@ -363,6 +364,28 @@ class DecoderUNet(BaseModel, ABC):
 
             self._layers[layer_idx] = layer
 
+        output = self._build_output_mask(dilation_rate, last_activation, layer, product)
+
+        return tuple(output)
+
+    def _build_output_mask(
+        self,
+        dilation_rate: int,
+        last_activation: Union[Callable, str],
+        layer: keras_layer.Layer,
+        product: dict,
+    ) -> List[keras_layer.Layer]:
+        """Build output mask.
+
+        Args:
+            dilation_rate: Integer, dilation rate of the decoder.
+            last_activation: Activation function of the last layer of the decoder.
+            layer:
+            product:
+
+        Returns:
+            List of output layers.
+        """
         out_mask = keras_layer.Conv2D(
             self.__n_channels,
             (1, 1),
@@ -376,41 +399,23 @@ class DecoderUNet(BaseModel, ABC):
         if self.__mask_product and -1 in product:
             out_mask = keras_layer.Multiply()([out_mask, product[-1]])
 
-        if self.__class_output is not None:
-            class_out = keras_layer.GlobalAvgPool2D()(layer)
-            class_out = keras_layer.Dense(
-                self.__class_output, activation="relu", name="mask_class_1"
-            )(class_out)
-            if training is not None:
-                class_out = keras_layer.Dropout(0.5)(class_out, training=training)
-            else:
-                class_out = keras_layer.Dropout(0.5)(class_out)
+        output = [out_mask]
 
-            class_out = keras_layer.Dense(
-                self.__class_output, activation="relu", name="mask_class_2"
-            )(class_out)
-            class_out = keras_layer.Dense(
-                self.__n_channels, activation="sigmoid", name="mask_class_logits_1"
-            )(class_out)
+        if self._filters_mc is not None:  # Mask class
+            mask_class = mm_branches.MaskClass(
+                filters=self._filters_mc, channels=self.__n_channels
+            )(layer)
 
-            out_mask = keras_layer.Multiply(name="multiply_end")([out_mask, class_out])
-
-            output = [out_mask, class_out]
-        else:
-            output = [out_mask]
+            out_mask = keras_layer.Multiply(name="multiply_end")([out_mask, mask_class])
+            output = [out_mask, mask_class]
 
         if self.__merge_branch:
-            merge_branch = keras_layer.Conv2D(
-                self.__n_channels,
-                (1, 1),
-                activation=last_activation,
-                padding="same",
+            merge_branch = mm_branches.MergeMasks(
+                filters=self.__n_channels,
                 dilation_rate=dilation_rate,
-                kernel_initializer="he_normal",
+                last_activation=last_activation,
             )(out_mask)
-            merge_branch = keras_layer.Lambda(
-                lambda t: tf.reduce_sum(t, axis=-1), name="merge_branch"
-            )(merge_branch)
+
             output.append(merge_branch)
 
-        return tuple(output)
+        return output

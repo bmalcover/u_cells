@@ -31,7 +31,7 @@ class UpConvBlock(keras_layer.Layer):
         activation: str = "relu",
         padding: str = "same",
         kernel_initializer: str = "he_normal",
-        **kwargs: dict
+        **kwargs
     ):
         super().__init__(**kwargs)
 
