@@ -2,6 +2,8 @@
 
 The defined loss functions on this module are used to calculate the loss of bounding boxes. In
 particular are used for the RPN module from the Faster R-CNN paper.
+
+Wr
 """
 import tensorflow as tf
 import tensorflow.keras.backend as keras
@@ -121,8 +123,8 @@ def bbox_loss_graph(
 
         """
         outputs = []
-        for i in range(num_rows):
-            outputs.append(x[i, : counts[i]])  # I imatge, counts[i] bboxes
+        for i in range(5):
+            outputs.append(x[i, :counts[i]])  # I imatge, counts[i] bboxes
         return tf.concat(outputs, axis=0)
 
     # Positive anchors contribute to the loss, but negative and

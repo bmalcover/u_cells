@@ -64,3 +64,5 @@ class TestReducedDataset(TestCase):
         n_zeros_s_img = np.count_nonzero(images[1] > 0.5)
 
         self.assertNotEqual(n_zeros_s_img, n_zeros_f_img)
+        
+        

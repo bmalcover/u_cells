@@ -27,6 +27,7 @@ from tensorflow import keras
 def conditional_dim_increment(tensor: tf.Tensor) -> tf.Tensor:
     """Conditional dimension increment
 
+
     Args:
         tensor (tf.Tensor):
 
@@ -311,7 +312,7 @@ class WeightedQuaternaryBCE(keras.losses.Loss):
         tp_pred = tf.squeeze(tf.gather(pos_pred, tp_px))
         tp_target = tf.squeeze(tf.gather(pos_target, tp_px))
 
-        bce = OwnBCE(reduction=tf.keras.losses.Reduction.SUM)
+        bce = OwnBCE()
 
         fp_loss = bce(fp_target, fp_pred)
         tp_loss = bce(tp_target, tp_pred)
