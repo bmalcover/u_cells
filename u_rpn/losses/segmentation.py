@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Segmentation losses for the training of FCN models.
 
 The losses defined in this module has as the main feature the ability to be used for the comparasion
@@ -17,12 +16,13 @@ Losses:
 
 Writen by: Miquel Miró Nicolau (UIB)
 """
+import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
 
 
-def dice_expanded(target, pred, smooth=1):
-    """ Computes the Sørensen–Dice coefficient for the batch of images.
+def dice_expanded(target: tf.Tensor, pred: tf.Tensor, smooth: int = 1):
+    """Computes the Sørensen–Dice coefficient for the batch of images.
 
     Dice = (2*|X & Y|)/ (|X|+ |Y|)
         =  2*sum(|A*B|)/(sum(A^2)+sum(B^2))
@@ -36,15 +36,22 @@ def dice_expanded(target, pred, smooth=1):
         https://arxiv.org/pdf/1606.04797v1.pdf
     """
     intersection = K.sum(K.abs(target * pred), axis=-1)
-    dice = (2. * intersection + smooth) / (
-            K.sum(K.square(target), -1) + K.sum(K.square(pred), -1) + smooth)
+    dice = (2.0 * intersection + smooth) / (
+        K.sum(K.square(target), -1) + K.sum(K.square(pred), -1) + smooth
+    )
 
     return 1 - dice
 
 
-def dice_aggregated_loss(target, pred, loss_type='sorensen', axis=(1, 2, 3), smooth=1e-5,
-                         mean: bool = True):
-    """ Dice coefficient loss function.
+def dice_aggregated_loss(
+    target: tf.Tensor,
+    pred: tf.Tensor,
+    loss_type: str = "sorensen",
+    axis: tuple = (1, 2, 3),
+    smooth: float = 1e-5,
+    mean: bool = True,
+) -> tf.Tensor:
+    """Dice coefficient loss function.
 
     Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
     of two batch of data, usually be used for binary image segmentation
@@ -70,24 +77,24 @@ def dice_aggregated_loss(target, pred, loss_type='sorensen', axis=(1, 2, 3), smo
         `Wiki-Dice <https://en.wikipedia.org/wiki/Sørensen–Dice_coefficient>`
     """
     inse = tf.reduce_sum(pred * target, axis=axis)
-    if loss_type == 'jaccard':
-        l = tf.reduce_sum(pred * pred, axis=axis)
-        r = tf.reduce_sum(target * target, axis=axis)
-    elif loss_type == 'sorensen':
-        l = tf.reduce_sum(pred, axis=axis)
-        r = tf.reduce_sum(target, axis=axis)
+    if loss_type == "jaccard":
+        pred = tf.reduce_sum(pred * pred, axis=axis)
+        target = tf.reduce_sum(target * target, axis=axis)
+    elif loss_type == "sorensen":
+        pred = tf.reduce_sum(pred, axis=axis)
+        target = tf.reduce_sum(target, axis=axis)
     else:
         raise Exception("Unknow loss_type")
 
-    dice = (2. * inse + smooth) / (l + r + smooth)
+    dice = (2.0 * inse + smooth) / (pred + target + smooth)
 
     if mean:
-        dice = tf.reduce_mean(dice, name='dice_coeff')
+        dice = tf.reduce_mean(dice, name="dice_coeff")
 
     return 1 - dice
 
 
-def dice_rpn(target, pred, *args, **kwargs):
+def dice_rpn(target: tf.Tensor, pred: tf.Tensor, *args: list, **kwargs: dict):
     """
 
     Args:
@@ -97,15 +104,19 @@ def dice_rpn(target, pred, *args, **kwargs):
     Returns:
 
     """
-    loss = K.switch(tf.math.greater(tf.size(input=target), 0),
-                    dice_expanded(target, pred),
-                    tf.constant(0.0))
+    loss = K.switch(
+        tf.math.greater(tf.size(input=target), 0),
+        dice_expanded(target, pred),
+        tf.constant(0.0),
+    )
     loss = K.mean(loss)
     return loss
 
 
-def mrcnn_mask_loss_graph(target_masks, pred, target_class_ids):
-    """ Mask binary cross-entropy loss for the masks head.
+def mrcnn_mask_loss_graph(
+    target_masks: np.ndarray, pred: np.ndarray, target_class_ids: np.ndarray
+) -> tf.Tensor:
+    """Mask binary cross-entropy loss for the masks head.
 
     Args:
         target_masks [batch, num_rois, height, width]: A float32 tensor of values 0 or 1. Uses zero
@@ -140,7 +151,7 @@ def mrcnn_mask_loss_graph(target_masks, pred, target_class_ids):
     positive_px = tf.compat.v1.where(tf.math.greater(y_true, 0))
 
     negative_px = tf.compat.v1.where(tf.equal(y_true, 0))
-    negative_px = tf.random.shuffle(negative_px)[:tf.size(positive_px)]
+    negative_px = tf.random.shuffle(negative_px)[: tf.size(positive_px)]
 
     y_true_pos = tf.gather(y_true, positive_px)
     y_pred_pos = tf.gather(y_pred, positive_px)
@@ -154,8 +165,11 @@ def mrcnn_mask_loss_graph(target_masks, pred, target_class_ids):
     # Compute binary cross entropy. If no positive ROIs, then return 0.
     # shape: [batch, roi, num_classes]
 
-    loss = K.switch(tf.math.greater(tf.size(input=y_true), 0),
-                    K.binary_crossentropy(target=y_true, output=y_pred),
-                    tf.constant(0.0))
+    loss = K.switch(
+        tf.math.greater(tf.size(input=y_true), 0),
+        K.binary_crossentropy(target=y_true, output=y_pred),
+        tf.constant(0.0),
+    )
     loss = K.mean(loss)
+
     return loss

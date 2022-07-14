@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ Module containing all the RPN data classes.
 
 The RPN data classes are used to store the data of bounding boxes and its related masks, its based
@@ -8,8 +7,8 @@ Writen by: Miquel Miró Nicolau (UIB)
 """
 import math
 import random
-from typing import Tuple
 import warnings
+from typing import Tuple
 
 import imgaug
 import numpy as np
@@ -19,19 +18,19 @@ from ..common import utils
 
 
 class Cache:
-    """ Class used to cache the data of the RPN.
+    """Class used to cache the data of the RPN.
 
     The class is used to cache the data of the RPN. To used it, you must call the object as a
     sequence with the operators [].
     """
 
-    def __init__(self, max_size: int = 10, override: bool = False):
+    def __init__(self, max_size: int = 10, override: bool = False) -> None:
         self.__cache = {}
         self.__max_size = max_size
         self.__override = override
 
     def __getitem__(self, item):
-        """ Return the value of the cache for the given key.
+        """Return the value of the cache for the given key.
 
         Args:
             item: Key of the cache.
@@ -48,7 +47,7 @@ class Cache:
         return self.__cache[item]
 
     def __setitem__(self, key, value):
-        """ Add value to the cache.
+        """Add value to the cache.
 
         The pair key=>value is added to the cache. If the cache is full, a random element is deleted
         to make space for the new element.
@@ -59,7 +58,7 @@ class Cache:
         """
         is_fulled = len(self.__cache) == self.__max_size
         if is_fulled and key not in self.__cache and self.__override:
-            warnings.warn(f"Cache fulled, removed random key")
+            warnings.warn("Cache fulled, removed random key")
             used_keys = list(self.__cache.keys())
             del self.__cache[random.choice(used_keys)]
 
@@ -74,7 +73,7 @@ class Cache:
 
 
 class DataGenerator(KU.Sequence):
-    """ An iterable that returns images and corresponding target class ids,
+    """An iterable that returns images and corresponding target class ids,
     bounding box deltas, and masks. It inherits from keras.utils.Sequence to avoid data redundancy
     when multiprocessing=True.
 
@@ -106,9 +105,19 @@ class DataGenerator(KU.Sequence):
                 the outputs list contains target class_ids, bbox deltas, and masks.
     """
 
-    def __init__(self, steps: int, dataset, config, shuffle=True, augmentation=None,
-                 detection_targets=False, cache=None, phantom_output: bool = False,
-                 pre_calculated: bool = False, size_anchors=None):
+    def __init__(
+        self,
+        steps: int,
+        dataset,
+        config,
+        shuffle=True,
+        augmentation=None,
+        detection_targets=False,
+        cache=None,
+        phantom_output: bool = False,
+        pre_calculated: bool = False,
+        size_anchors=None,
+    ):
 
         self.__steps = steps
         self.image_ids = np.copy(dataset.image_ids)
@@ -118,13 +127,16 @@ class DataGenerator(KU.Sequence):
         # Anchors
         # [anchor_count, (y1, x1, y2, x2)]
         if not pre_calculated:
-            self.backbone_shapes = DataGenerator.__compute_backbone_shapes(config.IMAGE_SHAPE,
-                                                                           config.BACKBONE_STRIDES)
-            self.anchors = DataGenerator.__generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
-                                                                    config.RPN_ANCHOR_RATIOS,
-                                                                    self.backbone_shapes,
-                                                                    config.BACKBONE_STRIDES,
-                                                                    config.RPN_ANCHOR_STRIDE)
+            self.backbone_shapes = DataGenerator.__compute_backbone_shapes(
+                config.IMAGE_SHAPE, config.BACKBONE_STRIDES
+            )
+            self.anchors = DataGenerator.__generate_pyramid_anchors(
+                config.RPN_ANCHOR_SCALES,
+                config.RPN_ANCHOR_RATIOS,
+                self.backbone_shapes,
+                config.BACKBONE_STRIDES,
+                config.RPN_ANCHOR_STRIDE,
+            )
 
             self.shuffle = shuffle
             self.augmentation = augmentation
@@ -141,11 +153,16 @@ class DataGenerator(KU.Sequence):
         return self.__steps
 
     def __getitem__(self, batch_idx):
-        batch_rpn_match = np.zeros([self.batch_size, self.__size_anchors, 1], dtype=np.float64)
-        batch_rpn_bbox = np.zeros([self.batch_size, self.config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4],
-                                  dtype=np.float64)
-        batch_images = np.zeros((self.batch_size,) + tuple(self.config.IMAGE_SHAPE),
-                                dtype=np.float32)
+        batch_rpn_match = np.zeros(
+            [self.batch_size, self.__size_anchors, 1], dtype=np.float64
+        )
+        batch_rpn_bbox = np.zeros(
+            [self.batch_size, self.config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4],
+            dtype=np.float64,
+        )
+        batch_images = np.zeros(
+            (self.batch_size,) + tuple(self.config.IMAGE_SHAPE), dtype=np.float32
+        )
 
         if self.config.COMBINE_FG:
             mask_depth = 1
@@ -153,29 +170,43 @@ class DataGenerator(KU.Sequence):
             mask_depth = self.config.MAX_GT_INSTANCES
 
         batch_gt_masks = np.zeros(
-            (self.batch_size, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], mask_depth),
-            dtype=np.float64)
-        batch_gt_class_ids = np.zeros((self.batch_size, self.config.MAX_GT_INSTANCES),
-                                      dtype=np.int32)
+            (
+                self.batch_size,
+                self.config.IMAGE_SHAPE[0],
+                self.config.IMAGE_SHAPE[1],
+                mask_depth,
+            ),
+            dtype=np.float64,
+        )
+        batch_gt_class_ids = np.zeros(
+            (self.batch_size, self.config.MAX_GT_INSTANCES), dtype=np.int32
+        )
 
         if self.__pre_calculated:
             b = 0
             inter_batch_idx = -1
             if self.dataset.whole_batch:
                 # image, masks, matches, bboxes, gt_class_ids
-                batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids = self.dataset.get_data(
-                    batch_idx)
+                (
+                    batch_images,
+                    batch_gt_masks,
+                    batch_rpn_match,
+                    batch_rpn_bbox,
+                    batch_gt_class_ids,
+                ) = self.dataset.get_data(batch_idx)
             else:
                 while b < self.batch_size:
                     inter_batch_idx = (inter_batch_idx + 1) % len(self.dataset)
                     image_index = inter_batch_idx + (self.batch_size * batch_idx)
 
-                    img, masks, matches, bboxes, gt_class = self.dataset.get_data(image_index)
+                    img, masks, matches, bboxes, gt_class = self.dataset.get_data(
+                        image_index
+                    )
                     batch_rpn_match[b] = matches
                     batch_rpn_bbox[b] = bboxes
                     batch_images[b] = img
-                    batch_gt_masks[b, :, :, :masks.shape[-1]] = masks
-                    batch_gt_class_ids[b, :gt_class.shape[0]] = gt_class
+                    batch_gt_masks[b, :, :, : masks.shape[-1]] = masks
+                    batch_gt_class_ids[b, : gt_class.shape[0]] = gt_class
 
                     b += 1
 
@@ -192,8 +223,15 @@ class DataGenerator(KU.Sequence):
 
                 # Get GT bounding boxes and masks for image.
                 image_id = self.image_ids[image_index]
-                image, image_meta, gt_class_ids, gt_boxes, gt_masks = DataGenerator.load_image_gt(
-                    self.dataset, self.config, image_id, augmentation=self.augmentation)
+                (
+                    image,
+                    image_meta,
+                    gt_class_ids,
+                    gt_boxes,
+                    gt_masks,
+                ) = DataGenerator.load_image_gt(
+                    self.dataset, self.config, image_id, augmentation=self.augmentation
+                )
 
                 # Skip images that have no instances. This can happen in cases
                 # where we train on a subset of classes and the image doesn't
@@ -202,13 +240,16 @@ class DataGenerator(KU.Sequence):
                     continue
 
                 # RPN Targets
-                rpn_match, rpn_bbox = DataGenerator.build_rpn_targets(image.shape, self.anchors,
-                                                                      gt_class_ids, gt_boxes,
-                                                                      self.config)
+                rpn_match, rpn_bbox = DataGenerator.build_rpn_targets(
+                    image.shape, self.anchors, gt_class_ids, gt_boxes, self.config
+                )
 
                 if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
                     ids = np.random.choice(
-                        np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
+                        np.arange(gt_boxes.shape[0]),
+                        self.config.MAX_GT_INSTANCES,
+                        replace=False,
+                    )
                     gt_masks = gt_masks[:, :, ids]
 
                 # Add to batch
@@ -216,19 +257,25 @@ class DataGenerator(KU.Sequence):
                 batch_rpn_bbox[b] = rpn_bbox
                 batch_images[b] = self.mold_image(image)
                 gt_masks = gt_masks.reshape((gt_masks.shape[0], gt_masks.shape[1], -1))
-                batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
-                batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
+                batch_gt_masks[b, :, :, : gt_masks.shape[-1]] = gt_masks
+                batch_gt_class_ids[b, : gt_class_ids.shape[0]] = gt_class_ids
                 b += 1
 
         if self.config.DO_MASK:
-            inputs = [batch_images, batch_gt_masks, batch_rpn_match, batch_rpn_bbox,
-                      batch_gt_class_ids]
+            inputs = [
+                batch_images,
+                batch_gt_masks,
+                batch_rpn_match,
+                batch_rpn_bbox,
+                batch_gt_class_ids,
+            ]
         else:
             inputs = [batch_images, batch_rpn_match, batch_rpn_bbox, batch_gt_class_ids]
 
         if self.__phantom_output:
             outputs = [np.zeros((4, 512, 512, 100))] + (
-                    [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1))
+                [np.zeros((10, 10))] * (self.config.RPN_NUM_OUTPUTS - 1)
+            )
         else:
             outputs = []
 
@@ -236,7 +283,7 @@ class DataGenerator(KU.Sequence):
 
     @staticmethod
     def __generate_anchors(scales, ratios, shape, feature_stride, anchor_stride):
-        """ Generates the anchors on each pixel of the feature map.
+        """Generates the anchors on each pixel of the feature map.
 
         Args:
             scales: 1D array of anchor sizes in pixels. Example: [32, 64, 128]
@@ -268,18 +315,20 @@ class DataGenerator(KU.Sequence):
         box_heights, box_centers_y = np.meshgrid(heights, shifts_y)
 
         # Reshape to get a list of (y, x) and a list of (h, w)
-        box_centers = np.stack(
-            [box_centers_y, box_centers_x], axis=2).reshape([-1, 2])
+        box_centers = np.stack([box_centers_y, box_centers_x], axis=2).reshape([-1, 2])
         box_sizes = np.stack([box_heights, box_widths], axis=2).reshape([-1, 2])
 
         # Convert to corner coordinates (y1, x1, y2, x2)
-        boxes = np.concatenate([box_centers - 0.5 * box_sizes,
-                                box_centers + 0.5 * box_sizes], axis=1)
+        boxes = np.concatenate(
+            [box_centers - 0.5 * box_sizes, box_centers + 0.5 * box_sizes], axis=1
+        )
         return boxes
 
     @staticmethod
-    def __generate_pyramid_anchors(scales, ratios, feature_shapes, feature_strides, anchor_stride):
-        """ Generate anchors at different levels of a feature pyramid.
+    def __generate_pyramid_anchors(
+        scales, ratios, feature_shapes, feature_strides, anchor_stride
+    ):
+        """Generate anchors at different levels of a feature pyramid.
 
         Each scale is associated with a level of the pyramid, but each ratio is used in all levels
         of the pyramid.
@@ -293,13 +342,20 @@ class DataGenerator(KU.Sequence):
         # [anchor_count, (y1, x1, y2, x2)]
         anchors = []
         for i in range(len(scales)):
-            anchors.append(DataGenerator.__generate_anchors(scales[i], ratios, feature_shapes[i],
-                                                            feature_strides[i], anchor_stride))
+            anchors.append(
+                DataGenerator.__generate_anchors(
+                    scales[i],
+                    ratios,
+                    feature_shapes[i],
+                    feature_strides[i],
+                    anchor_stride,
+                )
+            )
         return np.concatenate(anchors, axis=0)
 
     @staticmethod
     def __compute_backbone_shapes(image_shape, strides):
-        """ Computes the width and height of each stage of the backbone network.
+        """Computes the width and height of each stage of the backbone network.
 
         Args:
             image_shape: [height, width, depth].
@@ -309,12 +365,18 @@ class DataGenerator(KU.Sequence):
             [N, (height, width)]. Where N is the number of stages
         """
         return np.array(
-            [[int(math.ceil(image_shape[0] / stride)), int(math.ceil(image_shape[1] / stride))] for
-             stride in strides])
+            [
+                [
+                    int(math.ceil(image_shape[0] / stride)),
+                    int(math.ceil(image_shape[1] / stride)),
+                ]
+                for stride in strides
+            ]
+        )
 
     @staticmethod
     def build_rpn_targets(image_shape, anchors, gt_class_ids, gt_boxes, config):
-        """ Builds the targets for the Region Proposal Network.
+        """Builds the targets for the Region Proposal Network.
 
         Given the anchors and GT boxes, compute overlaps and identify positive anchors and deltas to
         refine them to match their corresponding GT boxes.
@@ -348,7 +410,7 @@ class DataGenerator(KU.Sequence):
             # Compute overlaps with crowd boxes [anchors, crowds]
             crowd_overlaps = utils.compute_overlaps(anchors, crowd_boxes)
             crowd_iou_max = np.amax(crowd_overlaps, axis=1)
-            no_crowd_bool = (crowd_iou_max < 0.001)
+            no_crowd_bool = crowd_iou_max < 0.001
         else:
             # All anchors don't intersect a crowd
             no_crowd_bool = np.ones([anchors.shape[0]], dtype=bool)
@@ -386,8 +448,7 @@ class DataGenerator(KU.Sequence):
             rpn_match[ids] = 0
         # Same for negative proposals
         ids = np.where(rpn_match == -1)[0]
-        extra = len(ids) - (config.RPN_TRAIN_ANCHORS_PER_IMAGE -
-                            np.sum(rpn_match == 1))
+        extra = len(ids) - (config.RPN_TRAIN_ANCHORS_PER_IMAGE - np.sum(rpn_match == 1))
         if extra > 0:
             # Rest the extra ones to neutral
             ids = np.random.choice(ids, extra, replace=False)
@@ -455,11 +516,13 @@ class DataGenerator(KU.Sequence):
         window = [0, 0, image.shape[1], image.shape[0]]
         scale = 1
         if not config.DYNAMIC_SIZE:
-            image, window, scale, padding, crop = utils.resize_image(image,
-                                                                     min_dim=config.IMAGE_MIN_DIM,
-                                                                     min_scale=config.IMAGE_MIN_SCALE,
-                                                                     max_dim=config.IMAGE_MAX_DIM,
-                                                                     mode=config.IMAGE_RESIZE_MODE)
+            image, window, scale, padding, crop = utils.resize_image(
+                image,
+                min_dim=config.IMAGE_MIN_DIM,
+                min_scale=config.IMAGE_MIN_SCALE,
+                max_dim=config.IMAGE_MAX_DIM,
+                mode=config.IMAGE_RESIZE_MODE,
+            )
             mask = utils.resize_mask(mask, scale, padding, crop)
 
         # Augmentation
@@ -468,9 +531,17 @@ class DataGenerator(KU.Sequence):
             # Augmenters that are safe to apply to masks
             # Some, such as Affine, have settings that make them unsafe, so always
             # test your augmentation on masks
-            MASK_AUGMENTERS = ["Sequential", "SomeOf", "OneOf", "Sometimes",
-                               "Fliplr", "Flipud", "CropAndPad",
-                               "Affine", "PiecewiseAffine"]
+            MASK_AUGMENTERS = [
+                "Sequential",
+                "SomeOf",
+                "OneOf",
+                "Sometimes",
+                "Fliplr",
+                "Flipud",
+                "CropAndPad",
+                "Affine",
+                "PiecewiseAffine",
+            ]
 
             def hook(images, augmenter, parents, default):
                 """Determines which augmenters to apply to masks."""
@@ -483,10 +554,11 @@ class DataGenerator(KU.Sequence):
             det = augmentation.to_deterministic()
             image = det.augment_image(image)
             # Change mask to np.uint8 because imgaug doesn't support np.bool
-            mask = det.augment_image(mask,
-                                     hooks=imgaug.HooksImages(activator=hook))
+            mask = det.augment_image(mask, hooks=imgaug.HooksImages(activator=hook))
             # Verify that shapes didn't change
-            assert image.shape == image_shape, "Augmentation shouldn't change image size"
+            assert (
+                image.shape == image_shape
+            ), "Augmentation shouldn't change image size"
             assert mask.shape == mask_shape, "Augmentation shouldn't change mask size"
             # Change mask back to bool
             mask = mask
@@ -512,12 +584,15 @@ class DataGenerator(KU.Sequence):
         # Different datasets have different classes, so track the
         # classes supported in the dataset of this image.
         active_class_ids = np.zeros([dataset.num_classes], dtype=np.int32)
-        source_class_ids = dataset.source_class_ids[dataset.image_info[image_id]["source"]]
+        source_class_ids = dataset.source_class_ids[
+            dataset.image_info[image_id]["source"]
+        ]
         active_class_ids[source_class_ids] = 1
 
         # Image meta data
-        image_meta = compose_image_meta(image_id, original_shape, image.shape,
-                                        window, scale, active_class_ids)
+        image_meta = compose_image_meta(
+            image_id, original_shape, image.shape, window, scale, active_class_ids
+        )
 
         if config.COMBINE_FG or config.MAKE_BACKGROUND_MASK:
             foreground_mask = np.sum(mask, axis=-1)
@@ -532,7 +607,7 @@ class DataGenerator(KU.Sequence):
         return image, image_meta, class_ids, bbox, mask
 
     def mold_image(self, images):
-        """ Mold inputs to format expected by the neural network.
+        """Mold inputs to format expected by the neural network.
 
         Normalization is done based on the mean and std of the image dataset. This mean and std are
         both stored in the config object and precalculated.
@@ -545,7 +620,7 @@ class DataGenerator(KU.Sequence):
         return images.astype(np.float64) - self.config.MEAN_PIXEL
 
     def decode_deltas(self, deltas: np.ndarray):
-        """ Decodes deltas prediction to the bounding boxes.
+        """Decodes deltas prediction to the bounding boxes.
 
         The deltas represent the changes to be applied to the anchors to obtain a better bounding
         box. This delta [dy, dx, dh, dw] are:
@@ -564,7 +639,9 @@ class DataGenerator(KU.Sequence):
         Returns:
 
         """
-        assert deltas.shape == self.anchors.shape, "Deltas and anchors has different size"
+        assert (
+            deltas.shape == self.anchors.shape
+        ), "Deltas and anchors has different size"
 
         b_boxes = np.zeros_like(deltas)
         deltas = np.copy(deltas)
@@ -582,8 +659,12 @@ class DataGenerator(KU.Sequence):
         height = anchor_height * deltas[:, 2]  # e^0 = 1
         width = anchor_width * deltas[:, 3]  # e^0 = 1
 
-        center_y = (deltas[:, 0] * anchor_height) + (self.anchors[:, 0] + 0.5 * anchor_height)
-        center_x = (deltas[:, 1] * anchor_width) + (self.anchors[:, 1] + 0.5 * anchor_width)
+        center_y = (deltas[:, 0] * anchor_height) + (
+            self.anchors[:, 0] + 0.5 * anchor_height
+        )
+        center_x = (deltas[:, 1] * anchor_width) + (
+            self.anchors[:, 1] + 0.5 * anchor_width
+        )
 
         b_boxes[:, 0] = center_y - 0.5 * height
         b_boxes[:, 1] = center_x - 0.5 * width
@@ -593,10 +674,15 @@ class DataGenerator(KU.Sequence):
         return b_boxes
 
 
-def compose_image_meta(image_id: int, original_image_shape: Tuple[int, int, int],
-                       image_shape: Tuple[int, int, int], window: Tuple[int, int, int, int], scale,
-                       active_class_ids):
-    """ Takes attributes of an image and puts them in one 1D array.
+def compose_image_meta(
+    image_id: int,
+    original_image_shape: Tuple[int, int, int],
+    image_shape: Tuple[int, int, int],
+    window: Tuple[int, int, int, int],
+    scale,
+    active_class_ids,
+) -> np.ndarray:
+    """Takes attributes of an image and puts them in one 1D array.
 
     Args:
         image_id: An int ID of the image. Useful for debugging.
@@ -613,11 +699,12 @@ def compose_image_meta(image_id: int, original_image_shape: Tuple[int, int, int]
 
     """
     meta = np.array(
-        [image_id] +  # size=1
-        list(original_image_shape) +  # size=3
-        list(image_shape) +  # size=3
-        list(window) +  # size=4 (y1, x1, y2, x2) in image cooredinates
-        [scale] +  # size=1
-        list(active_class_ids)  # size=num_classes
+        [image_id]
+        + list(original_image_shape)
+        + list(image_shape)
+        + list(window)
+        + [scale]
+        + list(active_class_ids)
     )
+
     return meta

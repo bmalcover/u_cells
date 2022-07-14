@@ -1,24 +1,21 @@
-# -*- coding: utf-8 -*-
 """ The datasets are python objects to read and load images for the RPN model.
 
 Copyright (C) 2020-2022  Miquel Miró Nicolau, UIB
 Written by Miquel Miró (UIB), 2022
 """
 import abc
-import os
-import json
 import enum
-import warnings
+import glob
+import json
+import os
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Union
-import glob
 
-import cv2
-import skimage
-import skimage.io
-import skimage.color
-import skimage.transform
 import numpy as np
+import skimage
+import skimage.color
+import skimage.io
+import skimage.transform
 import zarr
 
 
@@ -33,7 +30,7 @@ class Subset(enum.Enum):
 def prepared_required(input_func):
     def aux(*args, **kwargs):
         if not args[0].prepared:
-            raise EnvironmentError("First you must prepare the dataset object")
+            raise OSError("First you must prepare the dataset object")
         return input_func(*args, **kwargs)
 
     return aux
@@ -68,15 +65,17 @@ class Dataset(ABC):
         assert "." not in source, "Source name cannot contain a dot"
         # Does the class exist already?
         for info in self.class_info:
-            if info['source'] == source and info["id"] == class_id:
+            if info["source"] == source and info["id"] == class_id:
                 # source.class_id combination already available, skip
                 return
         # Add the class
-        self.class_info.append({
-            "source": source,
-            "id": class_id,
-            "name": class_name,
-        })
+        self.class_info.append(
+            {
+                "source": source,
+                "id": class_id,
+                "name": class_name,
+            }
+        )
 
     def add_image(self, source, image_id, path, **kwargs):
         image_info = {
@@ -116,13 +115,17 @@ class Dataset(ABC):
         self._image_ids = np.arange(self.num_images)
 
         # Mapping from source class and image IDs to internal IDs
-        self.class_from_source_map = {"{}.{}".format(info['source'], info['id']): id
-                                      for info, id in zip(self.class_info, self.class_ids)}
-        self.image_from_source_map = {"{}.{}".format(info['source'], info['id']): id
-                                      for info, id in zip(self.image_info, self.image_ids)}
+        self.class_from_source_map = {
+            "{}.{}".format(info["source"], info["id"]): id
+            for info, id in zip(self.class_info, self.class_ids)
+        }
+        self.image_from_source_map = {
+            "{}.{}".format(info["source"], info["id"]): id
+            for info, id in zip(self.image_info, self.image_ids)
+        }
 
         # Map sources to class_ids they support
-        self.sources = list(set([i['source'] for i in self.class_info]))
+        self.sources = list({i["source"] for i in self.class_info})
         self.source_class_ids = {}
         # Loop over datasets
         for source in self.sources:
@@ -130,7 +133,7 @@ class Dataset(ABC):
             # Find classes that belong to this dataset
             for i, info in enumerate(self.class_info):
                 # Include BG class in all datasets
-                if i == 0 or source == info['source']:
+                if i == 0 or source == info["source"]:
                     self.source_class_ids[source].append(i)
         self.prepared = True
 
@@ -145,8 +148,8 @@ class Dataset(ABC):
     def get_source_class_id(self, class_id, source):
         """Map an internal class ID to the corresponding class ID in the source dataset."""
         info = self.class_info[class_id]
-        assert info['source'] == source
-        return info['id']
+        assert info["source"] == source
+        return info["id"]
 
     @property
     def image_ids(self):
@@ -161,10 +164,9 @@ class Dataset(ABC):
 
     @prepared_required
     def get_image(self, image_id):
-        """Load the specified image and return a [H,W,3] Numpy array.
-        """
+        """Load the specified image and return a [H,W,3] Numpy array."""
         # Load image
-        image = skimage.io.imread(self.image_info[image_id]['path'])
+        image = skimage.io.imread(self.image_info[image_id]["path"])
         # If grayscale. Convert to RGB for consistency.
         if image.ndim != 3:
             image = skimage.color.gray2rgb(image)
@@ -200,13 +202,20 @@ class Dataset(ABC):
 
 
 class ErithocytesDataset(Dataset):
-    """ Dataset object to read and load images and masks for the RPN model of the erithocytes
+    """Dataset object to read and load images and masks for the RPN model of the erithocytes
     normalized dataset.
 
     """
 
-    def __init__(self, dataset_classes: List[Tuple[str, int, str]], gt_file: str,
-                 extension: str = "jpg", divisor: Union[int, float] = 1, *args, **kwargs):
+    def __init__(
+        self,
+        dataset_classes: List[Tuple[str, int, str]],
+        gt_file: str,
+        extension: str = "jpg",
+        divisor: Union[int, float] = 1,
+        *args,
+        **kwargs,
+    ):
         self.__classes = dataset_classes
         self.__gt_file = gt_file
         self.__extension = extension
@@ -215,7 +224,7 @@ class ErithocytesDataset(Dataset):
         super().__init__(*args, **kwargs)
 
     def load_cell(self, dataset_dir: str, subset: Subset):
-        """ Load a subset of the second erithocytes dataset.
+        """Load a subset of the second erithocytes dataset.
 
         Args:
             dataset_dir: String, root directory of the dataset.
@@ -233,8 +242,12 @@ class ErithocytesDataset(Dataset):
 
         # Add images
         for image_key, info in annotations.items():
-            polygons = info['regions']
-            cells_class = info['cell_class'] if len(self.__classes) > 1 else np.ones(len(polygons))
+            polygons = info["regions"]
+            cells_class = (
+                info["cell_class"]
+                if len(self.__classes) > 1
+                else np.ones(len(polygons))
+            )
 
             image_path = os.path.join(dataset_dir, f"{image_key}.{self.__extension}")
             mask_path = os.path.join(dataset_dir, f"{image_key}.npy")
@@ -243,8 +256,15 @@ class ErithocytesDataset(Dataset):
             height, width = image.shape[:2]
 
             self.add_image(
-                "cell", image_id=image_key, path=image_path, width=width, height=height,
-                mask_path=mask_path, polygons=polygons, cells_class=cells_class)
+                "cell",
+                image_id=image_key,
+                path=image_path,
+                width=width,
+                height=height,
+                mask_path=mask_path,
+                polygons=polygons,
+                cells_class=cells_class,
+            )
 
     @prepared_required
     def get_mask(self, image_id: int):
@@ -260,13 +280,13 @@ class ErithocytesDataset(Dataset):
         """
         info = self.image_info[image_id]
 
-        mask = np.load(info['mask_path']) / self.__divisor
+        mask = np.load(info["mask_path"]) / self.__divisor
 
         return mask, info["cells_class"]
 
     @prepared_required
     def image_reference(self, image_id) -> str:
-        """ Return the path of the image.
+        """Return the path of the image.
 
         Args:
             image_id: Integer, the image ID.
@@ -282,7 +302,7 @@ class ErithocytesDataset(Dataset):
 
 
 class ErithocytesPreDataset(Dataset):
-    """ Dataset object to read and load images and masks for the RPN model of the erithocytes
+    """Dataset object to read and load images and masks for the RPN model of the erithocytes
     normalized dataset.
 
     """
@@ -291,7 +311,7 @@ class ErithocytesPreDataset(Dataset):
         pass
 
     def image_reference(self, image_id):
-        """ Return the path of the image.
+        """Return the path of the image.
 
         Args:
             image_id: Integer, the image ID.
@@ -303,8 +323,15 @@ class ErithocytesPreDataset(Dataset):
 
         return os.path.join(folder, "image.png")
 
-    def __init__(self, dataset_dir, gt_file: str, extension: str = "jpg",
-                 divisor: Union[int, float] = 1, *args, **kwargs):
+    def __init__(
+        self,
+        dataset_dir,
+        gt_file: str,
+        extension: str = "jpg",
+        divisor: Union[int, float] = 1,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
 
         self.__dataset_dir = dataset_dir
@@ -344,13 +371,15 @@ class ErithocytesPreDataset(Dataset):
         return self.__image_size
 
     def prepare(self, class_map=None):
-        with open(os.path.join(self.__dataset_dir, self.__gt_file), "r") as f:
+        with open(os.path.join(self.__dataset_dir, self.__gt_file)) as f:
             aux = json.load(f)
             size_anchors = aux["total_matches"]
             whole_batch = bool(aux["whole_batch"])
 
             self._whole_batch = whole_batch
             self.__size_anchors = size_anchors
-            self.__image_size = len(glob.glob(os.path.join(self.__dataset_dir, "**", "image.zarr")))
+            self.__image_size = len(
+                glob.glob(os.path.join(self.__dataset_dir, "**", "image.zarr"))
+            )
 
             self.prepared = True

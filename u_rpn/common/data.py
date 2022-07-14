@@ -1,18 +1,17 @@
-# -*- coding: utf-8 -*-
 """ Module containing a set of utility functions for the data curation """
 
-from enum import Enum
-import random
-import json
 import glob
+import json
 import os
+import random
+from enum import Enum
 
+import cv2
 import imgaug.augmenters as iaa
-from skimage import transform
 import numpy as np
 import skimage
 import tqdm
-import cv2
+from skimage import transform  # noqa: F401
 
 CODES = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
 
@@ -25,7 +24,7 @@ class DecodeMode(Enum):
 
 
 def decode(gt_img: np.ndarray, mode: DecodeMode):
-    """ Decodes the input image into a mask for class or a background image.
+    """Decodes the input image into a mask for class or a background image.
 
     To be able to handle multiple channels images (more than three), instead of saving corrupt img
     files with more than three channels we define a unique code for any of the desirable channels.
@@ -49,14 +48,18 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
 
         decoded_img = np.dstack(channels)
     else:
-        decoded_img = (gt_img[:, :, 0] < 240) & (gt_img[:, :, 1] < 240) & (gt_img[:, :, 2] < 240)
+        decoded_img = (
+            (gt_img[:, :, 0] < 240) & (gt_img[:, :, 1] < 240) & (gt_img[:, :, 2] < 240)
+        )
         decoded_img = decoded_img.astype(np.uint8) * 255
 
         channels.append(decoded_img)
 
     if mode in (DecodeMode.MULTICHANNEL_BCK, DecodeMode.CELLS_BCK):
         # We add the background if one of the decoded options with background is selected.
-        bck_img = (gt_img[:, :, 0] > 240) & (gt_img[:, :, 1] > 240) & (gt_img[:, :, 2] > 240)
+        bck_img = (
+            (gt_img[:, :, 0] > 240) & (gt_img[:, :, 1] > 240) & (gt_img[:, :, 2] > 240)
+        )
         bck_img = bck_img.astype(np.uint8) * 255
 
         channels.append(bck_img)
@@ -65,9 +68,16 @@ def decode(gt_img: np.ndarray, mode: DecodeMode):
     return decoded_img
 
 
-def generate_data(n_images: int, input_path: str, output_folder: str, augmentation,
-                  region_point_path: str, to_mask: bool = False, output_shape=None):
-    """ Generate data an saves it to disk.
+def generate_data(
+    n_images: int,
+    input_path: str,
+    output_folder: str,
+    augmentation,
+    region_point_path: str,
+    to_mask: bool = False,
+    output_shape=None,
+):
+    """Generate data an saves it to disk.
 
     The data generation is a slow task. This functions aims to generate a defined set of images, and
     regions, to improve the performance of the train process.
@@ -109,24 +119,30 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
         for region in region_info[name].values():
             region = region["shape_attributes"]
 
-            h_points += region['all_points_x']
-            v_points += region['all_points_y']
+            h_points += region["all_points_x"]
+            v_points += region["all_points_y"]
 
         points = np.column_stack((h_points, v_points))
 
         img_aug, points_aug = augmentation(images=[img], keypoints=[points])
         img_aug = img_aug[0]
 
-        img_aug = skimage.transform.resize(img_aug, (output_shape[0], output_shape[1], 3))
+        img_aug = skimage.transform.resize(
+            img_aug, (output_shape[0], output_shape[1], 3)
+        )
 
         regions = region_info[name].values()
-        regions_lens = map(lambda x: len(x['shape_attributes']['all_points_x']), regions)
+        regions_lens = map(
+            lambda x: len(x["shape_attributes"]["all_points_x"]), regions
+        )
 
         min_points = []
         last_point = 0
         for idx_region, region_l in enumerate(regions_lens):
-            points = points_aug[0][last_point:last_point + region_l, :].astype(int)
-            dist_2_origin = list(map(lambda x: np.linalg.norm(x - np.array([0, 0])), points))
+            points = points_aug[0][last_point : last_point + region_l, :].astype(int)
+            dist_2_origin = list(
+                map(lambda x: np.linalg.norm(x - np.array([0, 0])), points)
+            )
 
             min_points.append(min(dist_2_origin))
 
@@ -139,8 +155,11 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
                 masks.append(mask)
             else:
                 region_out[f"{idx}.png"]["regions"][str(idx_region)] = {
-                    "shape_attributes": {'all_points_x': list(points[:, 0]),
-                                         'all_points_y': list(points[:, 1])}}
+                    "shape_attributes": {
+                        "all_points_x": list(points[:, 0]),
+                        "all_points_y": list(points[:, 1]),
+                    }
+                }
 
             last_point += region_l
 
@@ -150,7 +169,9 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
         cv2.imwrite(out_path, img_aug * 255)
 
         if to_mask:
-            with open(os.path.join(output_folder, str(idx).zfill(3) + ".npy"), 'wb+') as f:
+            with open(
+                os.path.join(output_folder, str(idx).zfill(3) + ".npy"), "wb+"
+            ) as f:
                 masks = np.dstack(masks)
                 masks = masks[:, :, idx_min_points]
                 np.save(f, np.array(masks))
@@ -160,9 +181,10 @@ def generate_data(n_images: int, input_path: str, output_folder: str, augmentati
             json.dump(region_out, outfile)
 
 
-def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort=False,
-                             ret_sort_val: bool = False):
-    """ Non Maximum Suppression implementation.
+def non_max_suppression_fast(
+    boxes, overlap_thresh, sort_val=None, reverse_sort=False, ret_sort_val: bool = False
+):
+    """Non Maximum Suppression implementation.
 
     Non Maximum Suppression (NMS) is a technique used in numerous computer vision tasks. It is a
     class of algorithms to select one entity (e.g., bounding boxes) out of many overlapping
@@ -201,7 +223,9 @@ def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort=
     if sort_val is None:
         idxs = np.argsort(y2)
     else:
-        assert len(sort_val) == len(y2), "Sort value size should be equal to the number of bboxes"
+        assert len(sort_val) == len(
+            y2
+        ), "Sort value size should be equal to the number of bboxes"
         idxs = np.argsort(sort_val)
         # keep looping while some indexes still remain in the indexes
 
@@ -228,8 +252,9 @@ def non_max_suppression_fast(boxes, overlap_thresh, sort_val=None, reverse_sort=
         # compute the ratio of overlap
         overlap = (width * height) / area[idxs[:last]]
         # delete all indexes from the index list that have
-        idxs = np.delete(idxs, np.concatenate(([last],
-                                               np.where(overlap > overlap_thresh)[0])))
+        idxs = np.delete(
+            idxs, np.concatenate(([last], np.where(overlap > overlap_thresh)[0]))
+        )
     # return only the bounding boxes that were picked using the
     # integer data type
     if not ret_sort_val:

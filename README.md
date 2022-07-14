@@ -1,4 +1,2 @@
 # U RPN
-## Combinations of U-Net and RPN with high expectations
-
-
+## Combinations of U-Net and RPN

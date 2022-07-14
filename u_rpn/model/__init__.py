@@ -1,5 +1,7 @@
-# -*- coding: utf-8 -*-
-from .rpn import *
-from .unet import *
+""" Module to build and use the UNet and U-RPN.
 
-__all__ = unet.__all__ + rpn.__all__
+Writen by: Miquel Miró Nicolau (UIB), 2020
+"""
+from . import rpn, unet
+
+__all__ = rpn.__all__ + unet.__all__
